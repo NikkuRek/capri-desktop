@@ -11,8 +11,10 @@ const config = require('./config');
 const { TRAY, LANGS } = require('./labels');
 const { startWindowWatch } = require('./windows');
 const commands = require('./commands');
+const { loadEnv } = require('./env');
 
 const ROOT = path.resolve(__dirname, '..', '..');
+loadEnv(ROOT);
 const DEV = process.argv.includes('--dev');
 const SOUND_EXT = /\.(mp3|wav|ogg|m4a)$/i;
 
