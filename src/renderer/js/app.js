@@ -161,8 +161,9 @@ async function boot() {
     chip.hide();
     updateHitRects();
   };
-  setInterval(updateHitRects, 300);
-  setTimeout(updateHitRects, 500);
+  updateHitRects();
+  setInterval(updateHitRects, 100);
+  setTimeout(updateHitRects, 200);
 
   capri.onDoze = (phase, face) => {
     if (phase === 'start') {

@@ -7,9 +7,10 @@
   "main": "src/main/main.js",
   "private": true,
   "scripts": {
-    "start": "electron --ozone-platform-hint=auto --enable-features=WaylandWindowDecorations .",
-    "start:xwayland": "electron --ozone-platform=x11 .",
-    "dev": "electron --ozone-platform-hint=auto --enable-features=WaylandWindowDecorations . --dev",
+    "start": "electron --ozone-platform=x11 .",
+    "start:wayland": "electron --ozone-platform-hint=auto --enable-features=WaylandWindowDecorations .",
+    "dev": "electron --ozone-platform=x11 . --dev",
+    "dev:wayland": "electron --ozone-platform-hint=auto --enable-features=WaylandWindowDecorations . --dev",
     "dist": "electron-builder --win",
     "dist:linux": "electron-builder --linux"
   },

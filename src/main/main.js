@@ -89,7 +89,12 @@ function createOverlay() {
   }
 
   overlay.loadURL('capri://app/src/renderer/index.html');
-  overlay.once('ready-to-show', () => overlay.showInactive());
+  overlay.once('ready-to-show', () => {
+    overlay.showInactive();
+    if (process.platform === 'linux' && typeof overlay?.setShape === 'function') {
+      overlay.setShape([{ x: 0, y: 0, width: 1, height: 1 }]);
+    }
+  });
   overlay.webContents.on('render-process-gone', (_e, details) => {
     console.error('[capri] renderer gone:', details.reason);
   });
@@ -236,21 +241,14 @@ function registerIpc() {
   ipcMain.on('overlay:interactive', (_e, on) => {
     if (process.platform === 'win32') {
       overlay?.setIgnoreMouseEvents(!on, { forward: true });
-    } else if (process.platform === 'linux' && typeof overlay?.setShape === 'function') {
-      try {
-        if (on) {
-          overlay.setShape([]);
-        } else {
-          overlay.setShape(currentHitRects);
-        }
-      } catch (err) {
-        console.error('[capri] setShape error:', err.message);
-      }
     }
   });
 
   ipcMain.on('overlay:set-shape', (_e, rects) => {
-    currentHitRects = Array.isArray(rects) ? rects : [];
+    const valid = Array.isArray(rects)
+      ? rects.filter((r) => r && r.width > 0 && r.height > 0)
+      : [];
+    currentHitRects = valid.length > 0 ? valid : [{ x: -100, y: -100, width: 1, height: 1 }];
     if (process.platform === 'linux' && typeof overlay?.setShape === 'function') {
       try {
         overlay.setShape(currentHitRects);
