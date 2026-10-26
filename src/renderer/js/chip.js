@@ -159,10 +159,12 @@ export class Chip extends Mask {
     this.mode = 'idle'; // hers: idle | work | alert | sleep
   }
 
-  // Bottom-left corner of a w x h screen.
-  place(w, h) {
-    super.place(MARGIN.left + 50 * K, h - MARGIN.bottom - 54 * K, K);
-    this.face = { x: MARGIN.left + 50 * K, y: h - MARGIN.bottom - 54 * K };
+  // Bottom-left corner of a w x h screen, or centered in compact box.
+  place(w, h, { center = false } = {}) {
+    const x = center ? w / 2 : MARGIN.left + 50 * K;
+    const y = h - MARGIN.bottom - 54 * K;
+    super.place(x, y, K);
+    this.face = { x, y };
   }
 
   center() {

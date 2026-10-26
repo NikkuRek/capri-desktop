@@ -158,13 +158,8 @@ function sendCommand(name, payload = {}) {
 function toggleVisible(force) {
   const visible = typeof force === 'boolean' ? force : !config.load().visible;
   config.save({ visible });
-  if (visible) {
-    overlay?.showInactive();
-    sendCommand('stow', { on: false });
-  } else {
-    sendCommand('stow', { on: true });
-    overlay?.hide();
-  }
+  overlay?.showInactive();
+  sendCommand('stow', { on: !visible });
   rebuildTray();
 }
 

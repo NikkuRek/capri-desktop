@@ -137,7 +137,7 @@ async function boot() {
     host.openMenu();
   });
   window.addEventListener('click', (e) => {
-    if (chip.visible && chip.contains(e.clientX, e.clientY, 0)) comeOut();
+    if (chip.visible && (chip.contains(e.clientX, e.clientY, 8) || config.compact)) comeOut();
   });
 
   // wiring
@@ -199,7 +199,7 @@ async function boot() {
 
   const updateLayout = (width, height) => {
     fx.resize(width, height);
-    chip.place(width, height);
+    chip.place(width, height, { center: Boolean(config.compact) });
     capri.setView(width, height);
     if (config.compact) {
       capri.pos.x = Math.round(width / 2);
