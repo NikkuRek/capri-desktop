@@ -132,9 +132,6 @@ function createOverlay() {
   });
 
   overlay.setAlwaysOnTop(true, 'screen-saver');
-  if (process.platform === 'win32') {
-    overlay.setIgnoreMouseEvents(true, { forward: true });
-  }
 
   overlay.loadURL('capri://app/src/renderer/index.html');
   overlay.once('ready-to-show', () => {
@@ -179,13 +176,7 @@ function toggleCompact(force) {
   overlay?.webContents.send('capri:config', rendererConfig());
 }
 
-function resolveLang(setting) {
-  if (LANGS.includes(setting)) return setting;
-  const preferred = [...app.getPreferredSystemLanguages(), app.getSystemLocale(), app.getLocale()];
-  for (const tag of preferred) {
-    const base = String(tag || '').toLowerCase().split(/[-_]/)[0];
-    if (LANGS.includes(base)) return base;
-  }
+function resolveLang() {
   return 'es';
 }
 
@@ -268,15 +259,7 @@ function rebuildTray() {
     },
     { label: t.wander, type: 'checkbox', checked: cfg.wander, click: (item) => updateConfig({ wander: item.checked }) },
     { label: t.possess, type: 'checkbox', checked: cfg.possess, click: (item) => updateConfig({ possess: item.checked }) },
-    {
-      label: t.lang,
-      submenu: [[t.auto, 'auto'], ...LANGS.map((lang) => [TRAY[lang].name, lang])].map(([label, lang]) => ({
-        label,
-        type: 'radio',
-        checked: cfg.lang === lang,
-        click: () => updateConfig({ lang }),
-      })),
-    },
+
     {
       label: t.startup,
       type: 'checkbox',
@@ -304,11 +287,7 @@ function createTray() {
 }
 
 function registerIpc() {
-  ipcMain.on('overlay:interactive', (_e, on) => {
-    if (process.platform === 'win32') {
-      overlay?.setIgnoreMouseEvents(!on, { forward: true });
-    }
-  });
+
 
   ipcMain.on('overlay:set-shape', (_e, rects) => {
     const valid = Array.isArray(rects)
@@ -355,11 +334,7 @@ function main() {
   }
   app.on('second-instance', () => sendCommand('status'));
 
-  if (process.platform === 'win32') {
-    app.setAppUserModelId('capri.desktop');
-  } else {
-    app.setName('capri-desktop');
-  }
+  app.setName('capri-desktop');
 
   app.whenReady().then(() => {
     serveProtocol();

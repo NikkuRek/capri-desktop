@@ -11,14 +11,17 @@
     "start:wayland": "electron --ozone-platform-hint=auto --enable-features=WaylandWindowDecorations .",
     "dev": "electron --ozone-platform=x11 . --dev",
     "dev:wayland": "electron --ozone-platform-hint=auto --enable-features=WaylandWindowDecorations . --dev",
-    "dist": "electron-builder --win",
+    "dist": "electron-builder --linux",
     "dist:linux": "electron-builder --linux"
   },
   "keywords": [
     "desktop-pet",
     "electron",
     "cyberpunk",
-    "edgerunners"
+    "edgerunners",
+    "linux",
+    "cachyos",
+    "niri"
   ],
   "license": "MIT",
   "engines": {
@@ -38,26 +41,15 @@
     "files": [
       "src/**",
       "assets/**",
-      "hooks/**",
+      "config/**",
       "scripts/**",
       "package.json",
       "LICENSE"
     ],
-    "asarUnpack": [
-      "hooks/**",
-      "src/main/windows.ps1"
-    ],
-    "win": {
-      "target": "nsis",
-      "icon": "assets/icons/capri.ico"
-    },
-    "nsis": {
-      "oneClick": true,
-      "perMachine": false,
-      "runAfterFinish": true,
-      "createDesktopShortcut": true,
-      "shortcutName": "Capri",
-      "artifactName": "Capri-Setup-${version}.${ext}"
+    "linux": {
+      "target": ["AppImage", "tar.gz"],
+      "category": "Utility",
+      "icon": "assets/icons/capri.png"
     }
   }
 }
