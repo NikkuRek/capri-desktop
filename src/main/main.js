@@ -65,11 +65,33 @@ function targetBounds() {
   return workArea;
 }
 
+function syncNiriWindowPosition(targetX, targetY) {
+  if (process.platform !== 'linux') return;
+  try {
+    const { execSync } = require('node:child_process');
+    const out = execSync('niri msg --json windows', { timeout: 1000 }).toString();
+    const wins = JSON.parse(out);
+    const capriWin = wins.find((w) => w.title === 'Capri');
+    if (!capriWin || !capriWin.layout?.tile_pos_in_workspace_view) return;
+    const [currentX, currentY] = capriWin.layout.tile_pos_in_workspace_view;
+    const dx = Math.round(targetX - currentX);
+    const dy = Math.round(targetY - currentY);
+    if (dx !== 0 || dy !== 0) {
+      const signX = dx >= 0 ? `+${dx}` : `${dx}`;
+      const signY = dy >= 0 ? `+${dy}` : `${dy}`;
+      execSync(`niri msg action move-floating-window --id ${capriWin.id} -x '${signX}' -y '${signY}'`, { timeout: 1000 });
+    }
+  } catch {
+    // Omitir si no es Niri
+  }
+}
+
 function fitOverlay() {
   if (!overlay) return;
   const b = targetBounds();
   overlay.setBounds(b);
   overlay.webContents.send('overlay:resize', { width: b.width, height: b.height });
+  setTimeout(() => syncNiriWindowPosition(b.x, b.y), 50);
 }
 
 function createOverlay() {
@@ -109,6 +131,8 @@ function createOverlay() {
   overlay.loadURL('capri://app/src/renderer/index.html');
   overlay.once('ready-to-show', () => {
     overlay.showInactive();
+    const b = targetBounds();
+    setTimeout(() => syncNiriWindowPosition(b.x, b.y), 100);
     if (process.platform === 'linux' && typeof overlay?.setShape === 'function') {
       overlay.setShape([{ x: 0, y: 0, width: 1, height: 1 }]);
     }
