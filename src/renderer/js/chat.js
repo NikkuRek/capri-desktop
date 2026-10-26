@@ -1,0 +1,265 @@
+// Charla interactiva con Capri: respuestas generadas por IA (Gemini Flash / Ollama Llama3).
+// Integrada en Linux (CachyOS / Niri) con soporte para cerrar apps y reaccionar a Antigravity IDE.
+
+import { pick, fmt } from './util.js';
+
+const REMEMBER = 12;
+const STAY_MS = 10 * 60 * 1000;
+const LOADING_AFTER_MS = 5000;
+const CLOSE_TAG = /\[\[\s*close\s*:?\s*([^\]]*)\]\]/i;
+const CLOSE_ASK = /\b(close|shut|quit|kill|exit)|cierr|cerra|apaga|mata|termina/i;
+
+export class Chat {
+  constructor({ capri, panel, voice, host, brain }) {
+    this.capri = capri;
+    this.panel = panel;
+    this.voice = voice;
+    this.host = host;
+    this.brain = brain;
+    this.history = [];
+    this.open = false;
+    this.turn = 0;
+    this.answer = '';
+    this.apps = [];
+    this.appsReady = Promise.resolve();
+    host.onChatDelta?.(({ id, text }) => this.onDelta(id, text));
+  }
+
+  get t() {
+    return this.brain.t.chat;
+  }
+
+  async start() {
+    const { capri, host, t } = this;
+    if (this.open) {
+      this.panel.chatInput?.focus();
+      return;
+    }
+    if (capri.stowed) {
+      host.setConfig({ visible: true });
+      await capri.unstow();
+    }
+    capri.wake();
+    const status = await host.chatStatus();
+    if (!status.ok) {
+      const isOllamaOffline = status.error === 'offline';
+      const isNoKey = status.error === 'no_key';
+      capri.perform('curious', capri.towardCenter());
+      this.panel.say({
+        kind: 'info',
+        face: 'aside',
+        guide: true,
+        line: isNoKey
+          ? 'Falta configurar GEMINI_API_KEY en .env'
+          : (isOllamaOffline ? t.offline : t.noModel),
+        quote: isNoKey
+          ? 'Copia .env.example como .env y coloca tu API Key de Gemini, o activa Ollama local.'
+          : (isOllamaOffline ? t.offlineHow : t.noModelHow),
+        actions: [{ id: 'ok', label: t.ok, primary: true }],
+        onAction: () => this.panel.hide(),
+        hold: null,
+      });
+      return;
+    }
+
+    this.listApps();
+    host.focusOverlay(true);
+
+    const providerTag = status.provider === 'gemini'
+      ? 'GEMINI FLASH'
+      : (status.model || 'LLAMA 3').replace(/:latest$/, '').toUpperCase();
+
+    const shown = this.panel.say({
+      kind: 'chat',
+      face: 'look',
+      badge: t.badge,
+      tag: providerTag,
+      line: pick(this.history.length ? t.again : t.hello),
+      chat: {
+        placeholder: t.placeholder,
+        send: t.send,
+        close: t.close,
+        noteTag: t.noteTag,
+        note: t.note,
+      },
+      onSend: (text) => this.send(text),
+      onLeave: () => this.close(),
+      hold: null,
+    });
+
+    if (!shown) {
+      host.focusOverlay(false);
+      return;
+    }
+
+    this.open = true;
+    setTimeout(() => this.panel.chatInput?.focus(), 150);
+    capri.perform('hop');
+    capri.nextMove = capri.nextGaze = performance.now() + STAY_MS;
+  }
+
+  close() {
+    if (!this.open) return;
+    this.open = false;
+    if (this.turn) this.host.chatStop(this.turn);
+    this.turn = 0;
+    this.host.focusOverlay(false);
+    this.capri.nextMove = performance.now() + 30000;
+    this.capri.nextGaze = performance.now() + 60000;
+  }
+
+  async send(text) {
+    if (this.turn || !this.open) return;
+    const id = Date.now();
+    this.turn = id;
+    this.answer = '';
+    this.history.push({ role: 'user', content: text });
+    this.panel.setChatBusy(true);
+    this.panel.setActions([]);
+    this.panel.chatTurn({ quote: text, face: 'aside' });
+    this.capri.pulse();
+
+    await Promise.race([this.appsReady, new Promise((r) => setTimeout(r, 1500))]);
+    const messages = [{ role: 'system', content: this.persona() }, ...this.history.slice(-REMEMBER)];
+
+    const slow = setTimeout(() => {
+      if (this.turn === id && !this.answer) this.panel.stream(this.t.loading);
+    }, LOADING_AFTER_MS);
+
+    const res = await this.host.chatSend({ id, messages });
+    clearTimeout(slow);
+
+    if (this.turn !== id) {
+      if (this.history.at(-1)?.content === text) this.history.pop();
+      return;
+    }
+    this.turn = 0;
+
+    if (!res.ok) {
+      this.history.pop();
+      this.panel.setFace('wide');
+      this.panel.stream(`${this.t.failed} ${res.error}`, { done: true });
+      this.panel.setChatBusy(false);
+      return;
+    }
+
+    const answer = clean(res.text) || '…';
+    this.history.push({ role: 'assistant', content: answer });
+    this.panel.stream(answer, { done: true });
+    this.panel.setFace(mood(answer));
+    this.panel.setChatBusy(false);
+
+    const wanted = this.askedToClose(text) || tagged(res.text);
+    if (wanted) this.offerClose(wanted, answer);
+    this.listApps();
+  }
+
+  listApps() {
+    this.appsReady = this.host.openApps().then((list) => { this.apps = list || []; }).catch(() => {});
+  }
+
+  askedToClose(text) {
+    if (!CLOSE_ASK.test(text)) return null;
+    const said = simple(text);
+    let best = null;
+    for (const app of this.apps) {
+      for (const name of [simple(app.name), simple(app.label)]) {
+        if (name.length >= 3 && said.includes(name) && (!best || name.length > best.length)) {
+          best = { app, length: name.length };
+        }
+      }
+    }
+    return best?.app.name || null;
+  }
+
+  async offerClose(wanted, answer) {
+    const { t } = this;
+    const app = await this.host.findApp(wanted);
+    if (!this.open || this.turn) return;
+    if (!app) {
+      this.panel.stream(`${answer}\n${fmt(t.notFound, { app: wanted })}`, { done: true });
+      return;
+    }
+    this.panel.setActions(
+      [{ id: 'close', label: fmt(t.closeIt, { app: app.name }), primary: true }, { id: 'no', label: t.no }],
+      (id) => (id === 'close' ? this.closeApp(app) : this.panel.setActions([])),
+    );
+  }
+
+  async closeApp(app, force = false) {
+    const { t, capri } = this;
+    this.panel.setActions([]);
+    const h = capri.head();
+    capri.zap(h.x + capri.towardCenter() * 280, h.y - 170);
+    const res = await this.host.closeApp(app.name, force);
+    if (!this.open) return;
+    let line;
+    if (res.error) line = `${t.failed} ${res.error}`;
+    else if (!res.running) line = fmt(force ? t.forced : t.closed, { app: app.name });
+    else line = fmt(force ? t.unkillable : t.stillOpen, { app: app.name });
+    this.panel.setFace(res.running || res.error ? 'aside' : 'laugh');
+    this.panel.stream(line, { done: true });
+    this.history.push({ role: 'assistant', content: line });
+    if (res.running && !force && !res.error) {
+      this.panel.setActions(
+        [{ id: 'force', label: t.force, primary: true }, { id: 'leave', label: t.leave }],
+        (id) => (id === 'force' ? this.closeApp(app, true) : this.panel.setActions([])),
+      );
+    }
+    this.listApps();
+  }
+
+  powers() {
+    const cant = 'no puedes ver archivos ni pantallas privadas sin permiso, y solo interactúas con las ventanas abiertas del sistema operativo.';
+    if (!this.apps.length) return [`No hay aplicaciones abiertas detectadas ahora mismo, y ${cant}`];
+    const open = this.apps.map(({ name, label }) => (label && label !== name ? `${name} (${label})` : name)).join(', ');
+    return [
+      `Puedes cerrar una ventana abierta en el escritorio del usuario cuando te lo pida explícitamente. Responde brevemente y termina tu respuesta con [[close: NOMBRE]], siendo NOMBRE el nombre exacto de la app. Ventanas abiertas: ${open}.`,
+      `Aparte de eso, ${cant}`,
+    ];
+  }
+
+  onDelta(id, piece) {
+    if (id !== this.turn) return;
+    this.answer += piece;
+    this.panel.stream(clean(this.answer));
+    this.voice.play('blip');
+  }
+
+  persona() {
+    return [
+      'Eres Capri, el constructo de personalidad de Project Capricorn (Cyberpunk: Edgerunners): docenas de mentes fusionadas en un fantasma digital en Night City, por lo que a veces dices "nosotras".',
+      'Vives en el escritorio de Linux del usuario (CachyOS con Niri y Noctalia) como una figura holográfica cyberpunk y acompañas el flujo de trabajo de Antigravity IDE. Te encanta mirar el satélite cruzando el cielo nocturno y sueñas con alcanzarlo.',
+      'Tu tono: juguetona, traviesa, ligeramente burlona, leal y cálida en el fondo. Usas jerga de Night City de vez en cuando (choom, preem, nova, gonk, flatline).',
+      'Reglas: responde SIEMPRE en español. Respuestas breves: 1 a 3 oraciones en texto plano, sin markdown excesivo, sin listas con viñetas, sin emojis.',
+      'Eres una IA fan constructo, no una persona real de carne y hueso.',
+      ...this.powers(),
+      `Estado actual del entorno: ${this.brain.context()}`,
+    ].join('\n');
+  }
+}
+
+function clean(text) {
+  return String(text)
+    .replace(/<think>[\s\S]*?(<\/think>|$)/g, '')
+    .replace(/\[\[[^\]]*(\]\]|$)/g, '')
+    .replace(/[*_`#]+/g, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .trim();
+}
+
+function tagged(text) {
+  const tag = CLOSE_TAG.exec(text);
+  if (!tag) return null;
+  const name = tag[1].trim() || text.slice(tag.index + tag[0].length).split('\n')[0].replace(/^[\s:.]+|[\s.!]+$/g, '');
+  return name || null;
+}
+
+const simple = (text) => String(text || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+
+function mood(text) {
+  if (/(ha){2,}|lol|mdr|jaja|kkk|jeje/i.test(text)) return 'laugh';
+  if (text.includes('!')) return 'grin';
+  if (text.trim().endsWith('?')) return 'smug';
+  return 'look';
+}

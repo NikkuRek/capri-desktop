@@ -4,6 +4,7 @@ import { Chip, Mask } from './chip.js';
 import { Panel } from './panel.js';
 import { Voice } from './voice.js';
 import { Brain } from './brain.js';
+import { Chat } from './chat.js';
 import { LINES } from './lines.js';
 import { pick } from './util.js';
 
@@ -66,6 +67,7 @@ async function boot() {
   capri.setScale(config.scale);
 
   const brain = new Brain({ capri, panel, voice, host, lang: config.lang });
+  const chat = new Chat({ capri, panel, voice, host, brain });
 
   // Click-through everywhere except on her body, the panel and her biochip.
   let interactive = false;
@@ -234,6 +236,9 @@ async function boot() {
     switch (cmd.name) {
       case 'teleport':
         capri.teleport(capri.spot('random'));
+        break;
+      case 'chat':
+        chat.start();
         break;
       case 'status':
         brain.status();

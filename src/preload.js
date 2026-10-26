@@ -25,4 +25,12 @@ contextBridge.exposeInMainWorld('host', {
   windowsNow: () => ipcRenderer.invoke('windows:get'),
   listCommands: () => ipcRenderer.invoke('commands:list'),
   runCommand: (id) => ipcRenderer.invoke('commands:run', id),
+  chatStatus: () => ipcRenderer.invoke('chat:status'),
+  chatSend: (request) => ipcRenderer.invoke('chat:send', request),
+  chatStop: (id) => ipcRenderer.send('chat:stop', id),
+  onChatDelta: on('chat:delta'),
+  openApps: () => ipcRenderer.invoke('apps:list'),
+  findApp: (wanted) => ipcRenderer.invoke('apps:find', wanted),
+  closeApp: (name, force) => ipcRenderer.invoke('apps:close', { name, force: Boolean(force) }),
+  focusOverlay: (on) => ipcRenderer.send('overlay:focus', Boolean(on)),
 });

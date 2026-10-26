@@ -5,10 +5,12 @@ const path = require('node:path');
 const { app } = require('electron');
 
 const DEFAULTS = {
+  mode: 'full',      // 'only-view' vs 'full' (con IA, shell e IDE)
+  aiProvider: 'gemini', // 'gemini' | 'ollama'
   scale: 0.6,        // sprite scale, 0.6 ≈ 250px tall
   muted: false,
   volume: 0.7,
-  lang: 'auto',      // 'auto' follows the system language
+  lang: 'es',        // 100% español
   displayId: null,   // null = primary display
   wander: true,      // random teleports when idle
   possess: true,     // now and then she dives into the window she sits on and takes it over

@@ -1,6 +1,5 @@
-// Autonomous personality driver for Capri (Only-View Edition).
-// No AI models or external CLI hooks; handles desktop pet interaction,
-// periodic construct thoughts, and visual flourishes.
+// Autonomous personality driver for Capri (Linux CachyOS / Niri).
+// Manages desktop pet interactions, Antigravity IDE events, and autonomous reflections.
 
 import { LINES } from './lines.js';
 import { pick, rand } from './util.js';
@@ -13,18 +12,32 @@ export class Brain {
     this.host = host;
     this.lang = lang;
     this.idleTimer = null;
+    this.ideActivity = {
+      project: 'capri-desktop',
+      status: 'idle',
+      lastAction: null,
+      actionsCount: 0,
+      startTime: null,
+    };
     this.startAutonomousLife();
   }
 
   get t() {
-    return LINES[this.lang] || LINES.es || LINES.en || LINES.fr;
+    return LINES[this.lang] || LINES.es;
   }
 
   say(kind, line, extra = {}) {
     return this.panel.say({ kind, line, ...extra });
   }
 
-  // Clicked in the tray or clicked on her body
+  context() {
+    if (this.ideActivity.status === 'working') {
+      const act = this.ideActivity.lastAction ? `, última acción: ${this.ideActivity.lastAction}` : '';
+      return `Antigravity IDE está trabajando en ${this.ideActivity.project} (${this.ideActivity.actionsCount} acciones realizadas${act}).`;
+    }
+    return 'Antigravity IDE está en reposo o esperando una nueva tarea del usuario.';
+  }
+
   status() {
     if (this.capri.stowed) return;
     if (this.capri.dormant) {
@@ -60,7 +73,7 @@ export class Brain {
   }
 
   onWindows({ fg }) {
-    // Window tracking
+    // Niri window tracking
   }
 
   stop() {

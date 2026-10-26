@@ -12,6 +12,8 @@ const { TRAY, LANGS } = require('./labels');
 const { startWindowWatch } = require('./windows');
 const commands = require('./commands');
 const { loadEnv } = require('./env');
+const ai = require('./ai');
+const apps = require('./apps');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 loadEnv(ROOT);
@@ -208,6 +210,25 @@ function rebuildTray() {
   const menu = Menu.buildFromTemplate([
     { label: t.title, enabled: false },
     { type: 'separator' },
+    { label: t.chat || 'Hablar con Capri', click: () => sendCommand('chat') },
+    {
+      label: t.provider || 'Proveedor de IA',
+      submenu: [
+        {
+          label: t.providerGemini || 'Google Gemini Flash',
+          type: 'radio',
+          checked: (cfg.aiProvider || 'gemini') === 'gemini',
+          click: () => updateConfig({ aiProvider: 'gemini' }),
+        },
+        {
+          label: t.providerOllama || 'Llama 3 (Ollama local)',
+          type: 'radio',
+          checked: cfg.aiProvider === 'ollama',
+          click: () => updateConfig({ aiProvider: 'ollama' }),
+        },
+      ],
+    },
+    { type: 'separator' },
     { label: t.satellite, click: () => sendCommand('satellite') },
     { label: t.possessNow, click: () => sendCommand('possess') },
     { label: t.celebrate, click: () => sendCommand('celebrate') },
@@ -339,6 +360,43 @@ function registerIpc() {
 
   ipcMain.handle('commands:list', () => commands.listCommands());
   ipcMain.handle('commands:run', (_e, id) => commands.runCommand(id));
+
+  const chats = new Map();
+  ipcMain.handle('chat:status', async () => ai.status(config.load()));
+  ipcMain.handle('chat:send', async (_e, { id, messages }) => {
+    const cfg = config.load();
+    const abort = new AbortController();
+    chats.set(id, abort);
+    try {
+      const sendDelta = (text) => overlay?.webContents.send('chat:delta', { id, text });
+      const text = await ai.chat({ messages, provider: cfg.aiProvider }, sendDelta, abort.signal);
+      return { ok: true, text };
+    } catch (err) {
+      return { ok: false, error: abort.signal.aborted ? 'stopped' : err.message };
+    } finally {
+      chats.delete(id);
+    }
+  });
+  ipcMain.on('chat:stop', (_e, id) => {
+    const c = chats.get(id);
+    if (c) {
+      c.abort();
+      chats.delete(id);
+    }
+  });
+  ipcMain.on('overlay:focus', (_e, on) => {
+    if (overlay && !overlay.isDestroyed()) {
+      if (on) {
+        overlay.setFocusable(true);
+        overlay.focus();
+      } else {
+        overlay.setFocusable(false);
+      }
+    }
+  });
+  ipcMain.handle('apps:list', () => apps.list());
+  ipcMain.handle('apps:find', (_e, wanted) => apps.find(wanted));
+  ipcMain.handle('apps:close', (_e, { name, force }) => apps.close(name, { force }));
 }
 
 function main() {
