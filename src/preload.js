@@ -20,5 +20,7 @@ contextBridge.exposeInMainWorld('host', {
   setConfig: (patch) => ipcRenderer.invoke('config:set', patch),
   listSounds: () => ipcRenderer.invoke('sounds:list'),
   openMenu: () => ipcRenderer.send('menu:open'),
+  toggleCompact: () => ipcRenderer.invoke('window:toggle-compact'),
+  toggleVisible: () => ipcRenderer.invoke('window:toggle-visible'),
   windowsNow: () => ipcRenderer.invoke('windows:get'),
 });

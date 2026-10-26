@@ -134,7 +134,7 @@ async function boot() {
   });
   window.addEventListener('contextmenu', (e) => {
     e.preventDefault();
-    if (chip.visible && chip.contains(e.clientX, e.clientY, 0)) host.openMenu();
+    host.openMenu();
   });
   window.addEventListener('click', (e) => {
     if (chip.visible && chip.contains(e.clientX, e.clientY, 0)) comeOut();
@@ -197,22 +197,31 @@ async function boot() {
   });
   host.windowsNow().then((data) => data && capri.setWindows(data));
 
-  host.onResize(({ width, height }) => {
+  const updateLayout = (width, height) => {
     fx.resize(width, height);
     chip.place(width, height);
     capri.setView(width, height);
-  });
-  window.addEventListener('resize', () => {
-    fx.resize(innerWidth, innerHeight);
-    chip.place(innerWidth, innerHeight);
-    capri.setView(innerWidth, innerHeight);
-  });
+    if (config.compact) {
+      capri.pos.x = Math.round(width / 2);
+      capri.pos.y = height - 16;
+      capri.place();
+    }
+    updateHitRects();
+  };
+
+  host.onResize(({ width, height }) => updateLayout(width, height));
+  window.addEventListener('resize', () => updateLayout(innerWidth, innerHeight));
 
   host.onConfig((cfg) => {
+    const wasCompact = config.compact;
+    config = { ...config, ...cfg };
     voice.configure(cfg);
-    capri.wander = cfg.wander;
-    capri.possessWindows = cfg.possess;
+    capri.wander = cfg.compact ? false : cfg.wander;
+    capri.possessWindows = cfg.compact ? false : cfg.possess;
     if (cfg.scale !== capri.scale) capri.setScale(cfg.scale);
+    if (cfg.compact !== wasCompact) {
+      updateLayout(innerWidth, innerHeight);
+    }
     if (cfg.lang !== brain.lang) {
       brain.lang = cfg.lang;
       panel.labels = LINES[cfg.lang] || LINES.es || LINES.fr;
@@ -285,9 +294,12 @@ async function boot() {
   });
 
   // initial entrance: her face grabs the screen edges, says hi, and dives down
+  if (config.compact) {
+    updateLayout(innerWidth, innerHeight);
+  }
   if (config.visible === false) {
     capri.stowNow();
-  } else if (intro) {
+  } else if (intro && !config.compact) {
     await capri.intro(capri.spot('post'));
   } else {
     await capri.materialize(capri.spot('post'));

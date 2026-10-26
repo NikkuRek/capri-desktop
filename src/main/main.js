@@ -42,28 +42,46 @@ function serveProtocol() {
   });
 }
 
+const COMPACT_BOUNDS = { width: 360, height: 460 };
+
 function targetDisplay() {
   const { displayId } = config.load();
   return screen.getAllDisplays().find((d) => d.id === displayId) || screen.getPrimaryDisplay();
 }
 
+function targetBounds() {
+  const { workArea } = targetDisplay();
+  const cfg = config.load();
+  if (cfg.compact) {
+    const w = Math.min(COMPACT_BOUNDS.width, workArea.width);
+    const h = Math.min(COMPACT_BOUNDS.height, workArea.height);
+    return {
+      x: workArea.x + workArea.width - w - 24,
+      y: workArea.y + workArea.height - h - 24,
+      width: w,
+      height: h,
+    };
+  }
+  return workArea;
+}
+
 function fitOverlay() {
   if (!overlay) return;
-  const { workArea } = targetDisplay();
-  overlay.setBounds(workArea);
-  overlay.webContents.send('overlay:resize', { width: workArea.width, height: workArea.height });
+  const b = targetBounds();
+  overlay.setBounds(b);
+  overlay.webContents.send('overlay:resize', { width: b.width, height: b.height });
 }
 
 function createOverlay() {
-  const { workArea } = targetDisplay();
+  const bounds = targetBounds();
   overlay = new BrowserWindow({
     title: 'Capri',
-    ...workArea,
+    ...bounds,
     transparent: true,
     backgroundColor: '#00000000',
     frame: false,
     resizable: false,
-    movable: false,
+    movable: true,
     minimizable: false,
     maximizable: false,
     fullscreenable: false,
@@ -116,8 +134,22 @@ function sendCommand(name, payload = {}) {
 function toggleVisible(force) {
   const visible = typeof force === 'boolean' ? force : !config.load().visible;
   config.save({ visible });
-  sendCommand('stow', { on: !visible });
+  if (visible) {
+    overlay?.showInactive();
+    sendCommand('stow', { on: false });
+  } else {
+    sendCommand('stow', { on: true });
+    overlay?.hide();
+  }
   rebuildTray();
+}
+
+function toggleCompact(force) {
+  const compact = typeof force === 'boolean' ? force : !config.load().compact;
+  config.save({ compact });
+  fitOverlay();
+  rebuildTray();
+  overlay?.webContents.send('capri:config', rendererConfig());
 }
 
 function resolveLang(setting) {
@@ -161,6 +193,12 @@ function rebuildTray() {
     { label: t.teleport, accelerator: 'Ctrl+Alt+T', click: () => sendCommand('teleport') },
     { label: t.sleep, click: () => sendCommand('sleep') },
     { label: cfg.visible ? t.hide : t.show, accelerator: 'Ctrl+Alt+C', click: () => toggleVisible() },
+    {
+      label: t.compact,
+      type: 'checkbox',
+      checked: Boolean(cfg.compact),
+      click: (item) => toggleCompact(item.checked),
+    },
     { type: 'separator' },
     {
       label: t.size,
@@ -266,6 +304,8 @@ function registerIpc() {
 
   ipcMain.handle('config:get', () => rendererConfig());
   ipcMain.handle('config:set', (_e, patch) => updateConfig(patch));
+  ipcMain.handle('window:toggle-compact', () => toggleCompact());
+  ipcMain.handle('window:toggle-visible', () => toggleVisible());
   ipcMain.on('menu:open', () => trayMenu?.popup({ window: overlay }));
   ipcMain.handle('windows:get', () => lastWindows);
 
