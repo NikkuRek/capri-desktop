@@ -11,6 +11,7 @@ const { execFile } = require('node:child_process');
 const KEEP = new Set([
   'explorer', 'applicationframehost', 'textinputhost', 'shellexperiencehost', 'startmenuexperiencehost',
   'searchhost', 'searchapp', 'lockapp', 'dwm', 'capri', 'electron', 'claude', 'ollama', 'ollama app',
+  'noctalia', 'niri', 'waybar', 'pipewire', 'wireplumber', 'systemd', 'bash', 'zsh', 'fish',
 ]);
 
 function powershell(script) {
@@ -22,8 +23,59 @@ function powershell(script) {
   });
 }
 
+function listLinux() {
+  return new Promise((resolve) => {
+    execFile('niri', ['msg', '--json', 'windows'], { timeout: 3000 }, (err, out) => {
+      if (err || !out) return resolve([]);
+      try {
+        const wins = JSON.parse(out);
+        const apps = new Map();
+        for (const w of wins) {
+          const name = w.app_id || '';
+          if (!name || w.pid === process.pid || KEEP.has(name.toLowerCase())) continue;
+          const app = apps.get(name) || { name, process: name, label: w.title || name, ids: [] };
+          if (w.pid && !app.ids.includes(w.pid)) app.ids.push(w.pid);
+          apps.set(name, app);
+        }
+        resolve([...apps.values()]);
+      } catch {
+        resolve([]);
+      }
+    });
+  });
+}
+
+function closeLinux(name, { force = false } = {}) {
+  return new Promise(async (resolve) => {
+    const apps = await listLinux();
+    const app = apps.find((a) => a.process === name);
+    if (!app || !app.ids.length) return resolve({ running: false });
+
+    for (const pid of app.ids) {
+      try {
+        process.kill(pid, force ? 'SIGKILL' : 'SIGTERM');
+      } catch {
+        // already gone or no permission
+      }
+    }
+
+    setTimeout(() => {
+      const stillAlive = app.ids.some((pid) => {
+        try {
+          process.kill(pid, 0);
+          return true;
+        } catch {
+          return false;
+        }
+      });
+      resolve({ running: stillAlive });
+    }, force ? 600 : 2000);
+  });
+}
+
 // [{ name, process, ids }]: one per program with a window open ("AM Music", "Discord"...)
 async function list() {
+  if (process.platform === 'linux') return listLinux();
   if (process.platform !== 'win32') return [];
   const out = await powershell(
     'Get-Process | Where-Object { $_.MainWindowHandle -ne 0 -and $_.MainWindowTitle } | '
@@ -62,6 +114,7 @@ async function find(wanted) {
 // Closes it like its close button would; `force` ends it outright (unsaved work is lost).
 // Resolves with what's left: { running } (true when it stayed open, or hid in the tray).
 async function close(name, { force = false } = {}) {
+  if (process.platform === 'linux') return closeLinux(name, { force });
   const app = (await list()).find((a) => a.process === name);
   if (!app) return { running: false };
   const ids = app.ids.join(',');

@@ -7,12 +7,14 @@
   "main": "src/main/main.js",
   "private": true,
   "scripts": {
-    "start": "electron .",
-    "dev": "electron . --dev",
+    "start": "electron --ozone-platform-hint=auto --enable-features=WaylandWindowDecorations .",
+    "start:xwayland": "electron --ozone-platform=x11 .",
+    "dev": "electron --ozone-platform-hint=auto --enable-features=WaylandWindowDecorations . --dev",
     "demo": "node scripts/demo.js",
     "hooks:install": "node scripts/install-hooks.js",
     "hooks:uninstall": "node scripts/install-hooks.js --uninstall",
-    "dist": "electron-builder --win"
+    "dist": "electron-builder --win",
+    "dist:linux": "electron-builder --linux"
   },
   "keywords": [
     "claude-code",

@@ -81,6 +81,20 @@ async function boot() {
     host.setInteractive(on);
   };
   const onChip = () => Boolean(chip.visible && mouse && chip.contains(mouse.x, mouse.y, 0));
+  const updateHitRects = () => {
+    if (capri.dragging) return;
+    const rects = [];
+    const cr = capri.rect();
+    if (cr) rects.push(cr);
+    const chr = chip.rect();
+    if (chr) rects.push(chr);
+    const mr = mask.rect();
+    if (mr) rects.push(mr);
+    const pr = panel.rect();
+    if (pr) rects.push({ x: Math.round(pr.left), y: Math.round(pr.top), width: Math.round(pr.width), height: Math.round(pr.height) });
+    host.setHitRects?.(rects);
+  };
+
   const refreshHit = () => {
     if (capri.dragging) return setInteractive(true);
     if (!mouse) return setInteractive(false);
@@ -115,11 +129,13 @@ async function boot() {
     mouse = { x: e.clientX, y: e.clientY };
     refreshHit();
     hoverChip();
+    updateHitRects();
   });
   document.addEventListener('mouseleave', () => {
     mouse = null;
     refreshHit();
     hoverChip();
+    updateHitRects();
   });
   window.addEventListener('contextmenu', (e) => {
     e.preventDefault();
@@ -135,14 +151,25 @@ async function boot() {
     panel.setAnchor({ ...head, lean: capri.pointing ? -capri.pointing.dir : 0 }, capri.view);
     // she may have moved out from under a still pointer: never leave a dead click zone behind
     refreshHit();
+    updateHitRects();
   };
-  capri.onTeleport = (phase) => (phase === 'start' ? panel.suspend() : panel.resume());
+  capri.onTeleport = (phase) => {
+    if (phase === 'start') panel.suspend();
+    else panel.resume();
+    updateHitRects();
+  };
   capri.chipAt = () => chip.center();
   capri.onStow = () => {
     chip.setMode(capri.mode);
     chip.show();
+    updateHitRects();
   };
-  capri.onUnstow = () => chip.hide();
+  capri.onUnstow = () => {
+    chip.hide();
+    updateHitRects();
+  };
+  setInterval(updateHitRects, 300);
+  setTimeout(updateHitRects, 500);
   capri.onDoze = (phase, face) => {
     if (phase === 'start') {
       mask.place(face.x, face.y, capri.scale * 1.1);

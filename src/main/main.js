@@ -81,8 +81,7 @@ function createOverlay() {
     skipTaskbar: true,
     focusable: false,
     hasShadow: false,
-    alwaysOnTop: true,
-    type: process.platform === 'win32' ? 'toolbar' : undefined,
+    type: process.platform === 'win32' ? 'toolbar' : 'toolbar',
     show: false,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload.js'),
@@ -95,7 +94,9 @@ function createOverlay() {
   });
 
   overlay.setAlwaysOnTop(true, 'screen-saver');
-  overlay.setIgnoreMouseEvents(true, { forward: true });
+  if (process.platform === 'win32') {
+    overlay.setIgnoreMouseEvents(true, { forward: true });
+  }
   overlay.loadURL('capri://app/src/renderer/index.html');
   // always shown: put away, she's still there as her biochip in the corner
   overlay.once('ready-to-show', () => overlay.showInactive());
@@ -310,9 +311,33 @@ function createTray() {
   rebuildTray();
 }
 
+let currentHitRects = [];
+
 function registerIpc() {
   ipcMain.on('overlay:interactive', (_e, on) => {
-    overlay?.setIgnoreMouseEvents(!on, { forward: true });
+    if (process.platform === 'win32') {
+      overlay?.setIgnoreMouseEvents(!on, { forward: true });
+    } else if (process.platform === 'linux' && typeof overlay?.setShape === 'function') {
+      try {
+        if (on) {
+          overlay.setShape([]);
+        } else {
+          overlay.setShape(currentHitRects);
+        }
+      } catch (err) {
+        console.error('[capri] setShape error:', err.message);
+      }
+    }
+  });
+  ipcMain.on('overlay:set-shape', (_e, rects) => {
+    currentHitRects = Array.isArray(rects) ? rects : [];
+    if (process.platform === 'linux' && typeof overlay?.setShape === 'function') {
+      try {
+        overlay.setShape(currentHitRects);
+      } catch (err) {
+        console.error('[capri] setShape error:', err.message);
+      }
+    }
   });
   ipcMain.handle('overlay:cursor', () => {
     const p = screen.getCursorScreenPoint();
@@ -483,8 +508,11 @@ function main() {
     app.quit();
     return;
   }
-  app.on('second-instance', () => sendCommand('status'));
-  if (process.platform === 'win32') app.setAppUserModelId('capri.desktop');
+  if (process.platform === 'win32') {
+    app.setAppUserModelId('capri.desktop');
+  } else {
+    app.setName('capri');
+  }
 
   app.whenReady().then(() => {
     serveProtocol();

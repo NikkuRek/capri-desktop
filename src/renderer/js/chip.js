@@ -46,6 +46,16 @@ class Small {
     return x >= this.x - pad && x <= this.x + this.w + pad && y >= this.y - pad && y <= this.y + this.h + pad;
   }
 
+  rect() {
+    if (!this.visible) return null;
+    return {
+      x: Math.round(this.x),
+      y: Math.round(this.y),
+      width: Math.round(this.w),
+      height: Math.round(this.h),
+    };
+  }
+
   show() {
     if (this.visible) return;
     this.visible = true;
