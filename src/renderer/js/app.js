@@ -214,12 +214,13 @@ async function boot() {
 
   host.onConfig((cfg) => {
     const wasCompact = config.compact;
+    const wasScale = config.scale;
     config = { ...config, ...cfg };
     voice.configure(cfg);
     capri.wander = cfg.compact ? false : cfg.wander;
     capri.possessWindows = cfg.compact ? false : cfg.possess;
     if (cfg.scale !== capri.scale) capri.setScale(cfg.scale);
-    if (cfg.compact !== wasCompact) {
+    if (cfg.compact !== wasCompact || cfg.scale !== wasScale) {
       updateLayout(innerWidth, innerHeight);
     }
     if (cfg.lang !== brain.lang) {

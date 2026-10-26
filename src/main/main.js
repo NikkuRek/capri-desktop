@@ -42,7 +42,12 @@ function serveProtocol() {
   });
 }
 
-const COMPACT_BOUNDS = { width: 280, height: 360 };
+function compactDimensions(scale = 0.6) {
+  const s = typeof scale === 'number' && scale > 0 ? scale : 0.6;
+  const w = Math.round(Math.max(200, 160 + 180 * s));
+  const h = Math.round(Math.max(260, 200 + 240 * s));
+  return { width: w, height: h };
+}
 
 function targetDisplay() {
   const { displayId } = config.load();
@@ -53,8 +58,9 @@ function targetBounds() {
   const { workArea } = targetDisplay();
   const cfg = config.load();
   if (cfg.compact) {
-    const w = Math.min(COMPACT_BOUNDS.width, workArea.width);
-    const h = Math.min(COMPACT_BOUNDS.height, workArea.height);
+    const dims = compactDimensions(cfg.scale);
+    const w = Math.min(dims.width, workArea.width);
+    const h = Math.min(dims.height, workArea.height);
     return {
       x: workArea.x + 24,
       y: workArea.y + workArea.height - h - 24,
@@ -102,7 +108,9 @@ function createOverlay() {
     transparent: true,
     backgroundColor: '#00000000',
     frame: false,
-    resizable: false,
+    resizable: true,
+    minWidth: 160,
+    minHeight: 220,
     movable: true,
     minimizable: false,
     maximizable: false,
@@ -188,6 +196,7 @@ function rendererConfig() {
 
 function updateConfig(patch) {
   config.save(patch);
+  fitOverlay();
   const cfg = rendererConfig();
   overlay?.webContents.send('capri:config', cfg);
   rebuildTray();
