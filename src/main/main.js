@@ -152,6 +152,7 @@ function rebuildTray() {
     { label: t.satellite, click: () => sendCommand('satellite') },
     { label: t.possessNow, click: () => sendCommand('possess') },
     { label: t.celebrate, click: () => sendCommand('celebrate') },
+    { label: t.intro, click: () => sendCommand('intro') },
     { label: t.teleport, accelerator: 'Ctrl+Alt+T', click: () => sendCommand('teleport') },
     { label: t.sleep, click: () => sendCommand('sleep') },
     { label: cfg.visible ? t.hide : t.show, accelerator: 'Ctrl+Alt+C', click: () => toggleVisible() },

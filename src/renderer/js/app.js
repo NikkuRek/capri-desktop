@@ -274,15 +274,22 @@ async function boot() {
           capri.setMode('sleep');
           setTimeout(() => capri.doze(), 1500);
         }
+      case 'intro':
+        if (capri.stowed) await capri.unstow();
+        capri.wake();
+        panel.hide();
+        await capri.intro(capri.spot('post'));
         break;
     }
   });
 
-  // initial entry
-  if (config.visible) {
-    capri.wake();
+  // initial entrance: her face grabs the screen edges, says hi, and dives down
+  if (config.visible === false) {
+    capri.stowNow();
+  } else if (intro) {
+    await capri.intro(capri.spot('post'));
   } else {
-    capri.stow();
+    await capri.materialize(capri.spot('post'));
   }
 }
 
