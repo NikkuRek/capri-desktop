@@ -226,6 +226,9 @@ async function boot() {
     if (cfg.compact !== wasCompact || cfg.scale !== wasScale) {
       updateLayout(innerWidth, innerHeight);
     }
+    if (cfg.mode === 'only-view' && chat.open) {
+      chat.close();
+    }
     if (cfg.lang !== brain.lang) {
       brain.lang = cfg.lang;
       panel.labels = LINES[cfg.lang] || LINES.es || LINES.fr;
@@ -239,7 +242,9 @@ async function boot() {
         capri.teleport(capri.spot('random'));
         break;
       case 'chat':
-        chat.start();
+        if (config.mode !== 'only-view') {
+          chat.start();
+        }
         break;
       case 'status':
         brain.status();

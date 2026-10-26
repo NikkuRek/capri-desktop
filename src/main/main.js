@@ -197,6 +197,22 @@ function updateConfig(patch) {
   fitOverlay();
   const cfg = rendererConfig();
   overlay?.webContents.send('capri:config', cfg);
+
+  if (cfg.mode === 'only-view') {
+    if (bridgeServer) {
+      bridgeServer.close();
+      bridgeServer = null;
+    }
+  } else {
+    if (!bridgeServer) {
+      bridgeServer = createBridge({
+        onEvent: (event) => {
+          overlay?.webContents.send('ide:event', event);
+        },
+      });
+    }
+  }
+
   rebuildTray();
   return cfg;
 }
@@ -209,28 +225,51 @@ function rebuildTray() {
   const displays = screen.getAllDisplays();
   const current = targetDisplay().id;
 
-  const menu = Menu.buildFromTemplate([
-    { label: t.title, enabled: false },
+  const isFull = cfg.mode !== 'only-view';
+
+  const menuItems = [
+    { label: `${t.title} (${isFull ? 'Full' : 'Only-View'})`, enabled: false },
     { type: 'separator' },
-    { label: t.chat || 'Hablar con Capri', click: () => sendCommand('chat') },
     {
-      label: t.provider || 'Proveedor de IA',
-      submenu: [
-        {
-          label: t.providerGemini || 'Google Gemini Flash',
-          type: 'radio',
-          checked: (cfg.aiProvider || 'gemini') === 'gemini',
-          click: () => updateConfig({ aiProvider: 'gemini' }),
-        },
-        {
-          label: t.providerOllama || 'Llama 3 (Ollama local)',
-          type: 'radio',
-          checked: cfg.aiProvider === 'ollama',
-          click: () => updateConfig({ aiProvider: 'ollama' }),
-        },
-      ],
+      label: t.modeOnlyView || 'Modo: Solo Visual (Only-View)',
+      type: 'radio',
+      checked: !isFull,
+      click: () => updateConfig({ mode: 'only-view' }),
+    },
+    {
+      label: t.modeFull || 'Modo: Completo (IA + IDE + Shell)',
+      type: 'radio',
+      checked: isFull,
+      click: () => updateConfig({ mode: 'full' }),
     },
     { type: 'separator' },
+  ];
+
+  if (isFull) {
+    menuItems.push(
+      { label: t.chat || 'Hablar con Capri', click: () => sendCommand('chat') },
+      {
+        label: t.provider || 'Proveedor de IA',
+        submenu: [
+          {
+            label: t.providerGemini || 'Google Gemini Flash',
+            type: 'radio',
+            checked: (cfg.aiProvider || 'gemini') === 'gemini',
+            click: () => updateConfig({ aiProvider: 'gemini' }),
+          },
+          {
+            label: t.providerOllama || 'Llama 3 (Ollama local)',
+            type: 'radio',
+            checked: cfg.aiProvider === 'ollama',
+            click: () => updateConfig({ aiProvider: 'ollama' }),
+          },
+        ],
+      },
+      { type: 'separator' },
+    );
+  }
+
+  menuItems.push(
     { label: t.satellite, click: () => sendCommand('satellite') },
     { label: t.possessNow, click: () => sendCommand('possess') },
     { label: t.celebrate, click: () => sendCommand('celebrate') },
@@ -244,14 +283,22 @@ function rebuildTray() {
       checked: Boolean(cfg.compact),
       click: (item) => toggleCompact(item.checked),
     },
-    { type: 'separator' },
-    {
-      label: t.commands || 'Comandos rápidos',
-      submenu: commands.listCommands().map((cmd) => ({
-        label: cmd.label,
-        click: () => commands.runCommand(cmd.id),
-      })),
-    },
+  );
+
+  if (isFull) {
+    menuItems.push(
+      { type: 'separator' },
+      {
+        label: t.commands || 'Comandos rápidos',
+        submenu: commands.listCommands().map((cmd) => ({
+          label: cmd.label,
+          click: () => commands.runCommand(cmd.id),
+        })),
+      },
+    );
+  }
+
+  menuItems.push(
     { type: 'separator' },
     {
       label: t.size,
@@ -302,7 +349,9 @@ function rebuildTray() {
     },
     { type: 'separator' },
     { label: t.quit, click: () => app.quit() },
-  ]);
+  );
+
+  const menu = Menu.buildFromTemplate(menuItems);
 
   tray.setContextMenu(menu);
   trayMenu = menu;
@@ -424,11 +473,13 @@ function main() {
       },
     });
 
-    bridgeServer = createBridge({
-      onEvent: (event) => {
-        overlay?.webContents.send('ide:event', event);
-      },
-    });
+    if (config.load().mode !== 'only-view') {
+      bridgeServer = createBridge({
+        onEvent: (event) => {
+          overlay?.webContents.send('ide:event', event);
+        },
+      });
+    }
 
     globalShortcut.register('Control+Alt+C', () => toggleVisible());
     globalShortcut.register('Control+Alt+S', () => sendCommand('satellite'));
