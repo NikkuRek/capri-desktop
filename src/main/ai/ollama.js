@@ -18,7 +18,7 @@ async function failure(res) {
   }
 }
 
-// Lista los modelos instalados en Ollama ("llama3.2:latest", etc.)
+// Lista los modelos instalados en Ollama ("llama3:latest", etc.)
 async function models() {
   const res = await fetch(`${base()}/api/tags`, { signal: AbortSignal.timeout(2500) });
   if (!res.ok) throw await failure(res);
@@ -32,7 +32,7 @@ function warm(model) {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ model, keep_alive: '15m' }),
-  }).catch(() => {});
+  }).catch(() => { });
 }
 
 // Streaming de respuesta de Ollama
@@ -41,7 +41,7 @@ async function chat({ model, messages }, onDelta, signal) {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      model: model || process.env.OLLAMA_MODEL || 'llama3.2',
+      model: model || process.env.OLLAMA_MODEL || 'llama3',
       messages,
       stream: true,
       keep_alive: '15m',

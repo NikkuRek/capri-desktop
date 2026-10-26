@@ -30,13 +30,13 @@ async function status(cfg = {}) {
   try {
     const list = await ollama.models();
     if (!list.length) {
-      return { ok: false, provider: 'ollama', error: 'no_model', model: 'llama3.2' };
+      return { ok: false, provider: 'ollama', error: 'no_model', model: 'llama3' };
     }
     const chosen = list.find((m) => m.startsWith('llama3')) || list[0];
     ollama.warm(chosen);
     return { ok: true, provider: 'ollama', model: chosen, list };
   } catch (err) {
-    return { ok: false, provider: 'ollama', error: 'offline', message: err.message, model: 'llama3.2' };
+    return { ok: false, provider: 'ollama', error: 'offline', message: err.message, model: 'llama3' };
   }
 }
 

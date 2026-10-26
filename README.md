@@ -123,7 +123,7 @@ panel and she answers in character, through an AI model running on your PC with 
 what Claude is doing and what it got done today. She answers in writing, in her own language.
 
 1. Install Ollama and open it.
-2. In a terminal: `ollama pull llama3.2` (about 2 GB). Any chat model works: pick it in her menu › **AI model (Ollama)**.
+2. In a terminal: `ollama pull llama3` (about 2 GB). Any chat model works: pick it in her menu › **AI model (Ollama)**.
 3. Her menu › **Talk to her**. Enter sends, Esc closes.
 
 **It's AI.** Her replies are written by the model, not by the show's writers: it's a fan version of her, and the chat

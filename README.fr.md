@@ -131,7 +131,7 @@ reste sur ton PC, un jour à la fois.
 dans sa langue.
 
 1. Installe Ollama et ouvre-le.
-2. Dans un terminal : `ollama pull llama3.2` (environ 2 Go). N'importe quel modèle de chat marche : choisis-le dans
+2. Dans un terminal : `ollama pull llama3` (environ 2 Go). N'importe quel modèle de chat marche : choisis-le dans
    son menu › **Modèle IA (Ollama)**.
 3. Son menu › **Lui parler**. Entrée envoie, Échap ferme.
 
