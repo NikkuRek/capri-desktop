@@ -42,7 +42,7 @@ function serveProtocol() {
   });
 }
 
-const COMPACT_BOUNDS = { width: 360, height: 460 };
+const COMPACT_BOUNDS = { width: 280, height: 360 };
 
 function targetDisplay() {
   const { displayId } = config.load();
@@ -56,7 +56,7 @@ function targetBounds() {
     const w = Math.min(COMPACT_BOUNDS.width, workArea.width);
     const h = Math.min(COMPACT_BOUNDS.height, workArea.height);
     return {
-      x: workArea.x + workArea.width - w - 24,
+      x: workArea.x + 24,
       y: workArea.y + workArea.height - h - 24,
       width: w,
       height: h,

@@ -139,7 +139,7 @@ body {
   left: 0;
   top: 0;
   z-index: 3;
-  width: clamp(290px, 21vw, 380px);
+  width: min(340px, calc(100vw - 20px));
   color: var(--paper);
   filter: drop-shadow(6px 6px 0 var(--violet));
   will-change: transform;
