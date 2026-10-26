@@ -1,0 +1,18 @@
+{
+  "commands": {
+    "brave": {
+      "id": "brave",
+      "label": "Abrir Brave Browser",
+      "command": "brave",
+      "args": [],
+      "description": "Navegador web Brave para CachyOS / Arch Linux"
+    },
+    "dolphin": {
+      "id": "dolphin",
+      "label": "Abrir Dolphin",
+      "command": "dolphin",
+      "args": [],
+      "description": "Explorador de archivos Dolphin de KDE"
+    }
+  }
+}

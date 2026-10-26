@@ -10,6 +10,7 @@ const {
 const config = require('./config');
 const { TRAY, LANGS } = require('./labels');
 const { startWindowWatch } = require('./windows');
+const commands = require('./commands');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const DEV = process.argv.includes('--dev');
@@ -220,6 +221,14 @@ function rebuildTray() {
     },
     { type: 'separator' },
     {
+      label: t.commands || 'Comandos rápidos',
+      submenu: commands.listCommands().map((cmd) => ({
+        label: cmd.label,
+        click: () => commands.runCommand(cmd.id),
+      })),
+    },
+    { type: 'separator' },
+    {
       label: t.size,
       submenu: [
         [t.small, 0.45],
@@ -325,6 +334,9 @@ function registerIpc() {
       return [];
     }
   });
+
+  ipcMain.handle('commands:list', () => commands.listCommands());
+  ipcMain.handle('commands:run', (_e, id) => commands.runCommand(id));
 }
 
 function main() {

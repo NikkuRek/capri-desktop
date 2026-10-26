@@ -23,4 +23,6 @@ contextBridge.exposeInMainWorld('host', {
   toggleCompact: () => ipcRenderer.invoke('window:toggle-compact'),
   toggleVisible: () => ipcRenderer.invoke('window:toggle-visible'),
   windowsNow: () => ipcRenderer.invoke('windows:get'),
+  listCommands: () => ipcRenderer.invoke('commands:list'),
+  runCommand: (id) => ipcRenderer.invoke('commands:run', id),
 });
