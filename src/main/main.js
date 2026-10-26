@@ -14,6 +14,7 @@ const commands = require('./commands');
 const { loadEnv } = require('./env');
 const ai = require('./ai');
 const apps = require('./apps');
+const { createBridge } = require('./bridge');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 loadEnv(ROOT);
@@ -30,6 +31,7 @@ let trayMenu = null;
 let windowWatch = null;
 let lastWindows = null;
 let currentHitRects = [];
+let bridgeServer = null;
 
 const userSoundsDir = () => path.join(app.getPath('userData'), 'sounds');
 
@@ -422,6 +424,12 @@ function main() {
       },
     });
 
+    bridgeServer = createBridge({
+      onEvent: (event) => {
+        overlay?.webContents.send('ide:event', event);
+      },
+    });
+
     globalShortcut.register('Control+Alt+C', () => toggleVisible());
     globalShortcut.register('Control+Alt+S', () => sendCommand('satellite'));
     globalShortcut.register('Control+Alt+P', () => sendCommand('possess'));
@@ -435,6 +443,7 @@ function main() {
   app.on('will-quit', () => {
     globalShortcut.unregisterAll();
     windowWatch?.stop();
+    bridgeServer?.close();
   });
 
   app.on('window-all-closed', (e) => e.preventDefault());

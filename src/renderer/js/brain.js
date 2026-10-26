@@ -76,6 +76,43 @@ export class Brain {
     // Niri window tracking
   }
 
+  onIdeEvent(event) {
+    if (!event || typeof event !== 'object') return;
+    const name = String(event.hook_event_name || event.event || '').toLowerCase();
+    const tool = event.tool_name || event.tool || '';
+    const target = event.target || event.message || '';
+    const project = event.project || this.ideActivity.project;
+
+    this.ideActivity.project = project;
+
+    if (name === 'tool' || name === 'tooluse' || name === 'pretooluse') {
+      this.ideActivity.status = 'working';
+      this.ideActivity.actionsCount++;
+      this.ideActivity.lastAction = `${tool} ${target}`.trim();
+
+      const verb = (this.t.verbs && this.t.verbs[tool]) || 'Ejecuta';
+      this.panel.setTicker({ verb, target: target || tool, error: false });
+      this.capri.pulse();
+      this.voice.play('blip');
+    } else if (name === 'done' || name === 'taskdone' || name === 'stop') {
+      this.ideActivity.status = 'idle';
+      this.panel.setTicker(null);
+      this.say('done', pick(this.t.done), { face: 'look', hold: 5000 });
+      this.capri.celebrate();
+    } else if (name === 'error') {
+      this.panel.setTicker({ verb: 'Error', target: tool || 'Falló', error: true });
+      this.say('error', (pick(this.t.error) || 'Error en {tool}').replace('{tool}', tool || 'herramienta'), { face: 'wide', hold: 5000 });
+      this.capri.perform('split');
+      this.voice.play('shock');
+    } else if (name === 'prompt' || name === 'start' || name === 'userprompt') {
+      this.ideActivity.status = 'working';
+      this.say('work', pick(this.t.prompt), { face: 'calm', hold: 4000 });
+      this.capri.perform('hop');
+    } else if (name === 'status' && event.message) {
+      this.say('info', event.message, { face: 'calm', hold: 4000 });
+    }
+  }
+
   stop() {
     clearTimeout(this.idleTimer);
   }

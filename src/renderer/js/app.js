@@ -198,6 +198,7 @@ async function boot() {
     brain.onWindows(data);
   });
   host.windowsNow().then((data) => data && capri.setWindows(data));
+  host.onIdeEvent?.((event) => brain.onIdeEvent(event));
 
   const updateLayout = (width, height) => {
     fx.resize(width, height);

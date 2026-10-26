@@ -9,6 +9,7 @@ const on = (channel) => (fn) => {
 };
 
 contextBridge.exposeInMainWorld('host', {
+  onIdeEvent: on('ide:event'),
   onCommand: on('capri:command'),
   onConfig: on('capri:config'),
   onResize: on('overlay:resize'),
