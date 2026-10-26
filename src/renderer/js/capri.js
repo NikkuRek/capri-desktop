@@ -154,6 +154,21 @@ export class Capri {
     this.onMove?.(this.head());
   }
 
+  rect() {
+    if (this.hidden || this.p.alpha < 0.2) return null;
+    const s = this.scale;
+    const left = this.pos.x - (SPRITE.pad + SPRITE.feet.x) * s;
+    const top = this.pos.y - (SPRITE.pad + SPRITE.feet.y) * s + this.bob;
+    const width = (SPRITE.width + SPRITE.pad * 2) * s;
+    const height = (SPRITE.height + SPRITE.pad * 2) * s;
+    return {
+      x: Math.round(left),
+      y: Math.round(top),
+      width: Math.round(width),
+      height: Math.round(height),
+    };
+  }
+
   // her face on screen, plus `top`: the tips of her mane
   head(at = this.pos, facing = this.facing) {
     const s = this.scale;

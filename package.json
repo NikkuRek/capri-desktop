@@ -1,21 +1,20 @@
 {
   "name": "capri-desktop",
   "version": "0.3.1",
-  "description": "Capri, the Project Capricorn construct, living on your desktop and narrating what Claude Code is doing.",
+  "description": "Capri, the Project Capricorn construct, living on your desktop as an interactive aesthetic desktop pet (Only-View Edition).",
   "author": "mochiiwuff",
   "repository": "github:mochiiwuff/capri-desktop",
   "main": "src/main/main.js",
   "private": true,
   "scripts": {
-    "start": "electron .",
-    "dev": "electron . --dev",
-    "demo": "node scripts/demo.js",
-    "hooks:install": "node scripts/install-hooks.js",
-    "hooks:uninstall": "node scripts/install-hooks.js --uninstall",
-    "dist": "electron-builder --win"
+    "start": "electron --ozone-platform=x11 .",
+    "start:wayland": "electron --ozone-platform-hint=auto --enable-features=WaylandWindowDecorations .",
+    "dev": "electron --ozone-platform=x11 . --dev",
+    "dev:wayland": "electron --ozone-platform-hint=auto --enable-features=WaylandWindowDecorations . --dev",
+    "dist": "electron-builder --win",
+    "dist:linux": "electron-builder --linux"
   },
   "keywords": [
-    "claude-code",
     "desktop-pet",
     "electron",
     "cyberpunk",
