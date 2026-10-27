@@ -479,6 +479,7 @@ function main() {
           overlay?.webContents.send('ide:event', event);
         },
       });
+      ai.warmOllama();
     }
 
     globalShortcut.register('Control+Alt+C', () => toggleVisible());

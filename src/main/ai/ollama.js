@@ -18,6 +18,15 @@ async function failure(res) {
   }
 }
 
+function getKeepAlive() {
+  const envVal = process.env.OLLAMA_KEEP_ALIVE;
+  if (envVal !== undefined && envVal !== '') {
+    const num = Number(envVal);
+    return isNaN(num) ? envVal : num;
+  }
+  return -1; // -1 en Ollama mantiene el modelo cargado indefinidamente en memoria (cero espera en próximas aperturas)
+}
+
 // Lista los modelos instalados en Ollama ("llama3:latest", etc.)
 async function models() {
   const res = await fetch(`${base()}/api/tags`, { signal: AbortSignal.timeout(2500) });
@@ -26,16 +35,19 @@ async function models() {
   return list.map((m) => m.name);
 }
 
-// Carga previa del modelo en RAM/VRAM
+// Carga previa del modelo en RAM/VRAM de forma persistente
 function warm(model) {
-  fetch(`${base()}/api/generate`, {
+  const m = model || process.env.OLLAMA_MODEL || 'llama3';
+  return fetch(`${base()}/api/generate`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ model, keep_alive: '15m' }),
-  }).catch(() => { });
+    body: JSON.stringify({ model: m, keep_alive: getKeepAlive() }),
+  }).catch((err) => {
+    console.warn('[capri:ollama] No se pudo precargar modelo:', err.message);
+  });
 }
 
-// Streaming de respuesta de Ollama
+// Streaming de respuesta de Ollama con persistencia permanente
 async function chat({ model, messages }, onDelta, signal) {
   const res = await fetch(`${base()}/api/chat`, {
     method: 'POST',
@@ -44,7 +56,7 @@ async function chat({ model, messages }, onDelta, signal) {
       model: model || process.env.OLLAMA_MODEL || 'llama3',
       messages,
       stream: true,
-      keep_alive: '15m',
+      keep_alive: getKeepAlive(),
       options: { temperature: 0.85, num_predict: 240 },
     }),
     signal,

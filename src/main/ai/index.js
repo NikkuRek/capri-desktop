@@ -50,10 +50,21 @@ async function chat({ messages, provider: reqProvider, model }, onDelta, signal)
   }
 }
 
+function warmOllama() {
+  ollama.models().then((list) => {
+    if (list && list.length) {
+      const chosen = list.find((m) => m.startsWith('llama3')) || list[0];
+      ollama.warm(chosen);
+      console.log(`[capri:ollama] Modelo ${chosen} precargado en memoria (keep_alive permanente).`);
+    }
+  }).catch(() => {});
+}
+
 module.exports = {
   resolveProvider,
   status,
   chat,
+  warmOllama,
   gemini,
   ollama,
 };
