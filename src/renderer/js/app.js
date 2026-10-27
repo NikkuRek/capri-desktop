@@ -69,6 +69,20 @@ async function boot() {
   const brain = new Brain({ capri, panel, voice, host, lang: config.lang });
   const chat = new Chat({ capri, panel, voice, host, brain });
 
+  const origPanelSay = panel.say.bind(panel);
+  panel.say = (msg) => {
+    const shown = origPanelSay(msg);
+    if (shown && config.compact) {
+      host.setExpanded?.(true);
+    }
+    return shown;
+  };
+  panel.onDismiss = () => {
+    if (!chat.open && config.compact) {
+      host.setExpanded?.(false);
+    }
+  };
+
   // Click-through everywhere except on her body, the panel and her biochip.
   let interactive = false;
   let mouse = null;
@@ -139,7 +153,7 @@ async function boot() {
     host.openMenu();
   });
   window.addEventListener('click', (e) => {
-    if (chip.visible && (chip.contains(e.clientX, e.clientY, 8) || config.compact)) comeOut();
+    if (chip.visible && (chip.contains(e.clientX, e.clientY, 8) || config.compact || innerWidth <= 120)) comeOut();
   });
 
   // wiring
@@ -206,7 +220,7 @@ async function boot() {
     capri.setView(width, height);
     if (config.compact) {
       capri.pos.x = Math.round(width / 2);
-      capri.pos.y = height - 16;
+      capri.pos.y = height - 12;
       capri.place();
     }
     updateHitRects();

@@ -161,6 +161,19 @@ export class Chip extends Mask {
 
   // Bottom-left corner of a w x h screen, or centered in compact box.
   place(w, h, { center = false } = {}) {
+    if (w <= 120 && h <= 140) {
+      // Dedicated ultra-compact chip mode window (e.g. 76x96)
+      this.w = w;
+      this.h = h;
+      this.k = 0.5;
+      this.cx = Math.round(w / 2);
+      this.cy = Math.round(h / 2 + 10);
+      this.moveTo(0, 0);
+      this.face = { x: this.cx, y: this.cy };
+      return;
+    }
+    this.w = 140;
+    this.h = 170;
     const x = center ? w / 2 : MARGIN.left + 50 * K;
     const y = h - MARGIN.bottom - 54 * K;
     super.place(x, y, K);
@@ -173,6 +186,9 @@ export class Chip extends Mask {
 
   // just the mask, spike and fang included
   contains(x, y, pad = 8) {
+    if (this.w <= 120 && this.h <= 140) {
+      return x >= 0 && x <= this.w && y >= 0 && y <= this.h;
+    }
     const { x: fx, y: fy } = this.face;
     return x >= fx - 50 * K - pad && x <= fx + 50 * K + pad && y >= fy - 100 * K - pad && y <= fy + 54 * K + pad;
   }

@@ -69,6 +69,8 @@ export class Chat {
       ? 'GEMINI FLASH'
       : (status.model || 'LLAMA 3').replace(/:latest$/, '').toUpperCase();
 
+    host.setExpanded?.(true);
+
     const shown = this.panel.say({
       kind: 'chat',
       face: 'look',
@@ -88,6 +90,7 @@ export class Chat {
     });
 
     if (!shown) {
+      host.setExpanded?.(false);
       host.focusOverlay(false);
       return;
     }
@@ -101,6 +104,7 @@ export class Chat {
   close() {
     if (!this.open) return;
     this.open = false;
+    this.host.setExpanded?.(false);
     if (this.turn) this.host.chatStop(this.turn);
     this.turn = 0;
     this.host.focusOverlay(false);

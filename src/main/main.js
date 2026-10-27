@@ -49,10 +49,18 @@ function serveProtocol() {
   });
 }
 
-function compactDimensions(scale = 0.6) {
+let isOverlayExpanded = false;
+
+function compactDimensions(scale = 0.6, expanded = false) {
   const s = typeof scale === 'number' && scale > 0 ? scale : 0.6;
-  const w = Math.round(Math.max(200, 160 + 180 * s));
-  const h = Math.round(Math.max(260, 200 + 240 * s));
+  if (expanded) {
+    const w = Math.round(Math.max(280, 240 + 100 * s));
+    const h = Math.round(Math.max(330, 260 + 120 * s));
+    return { width: w, height: h };
+  }
+  // Modo widget mínimo: recuadro ceñido exactamente alrededor de Capri
+  const w = Math.round(Math.max(130, 80 + 110 * s));
+  const h = Math.round(Math.max(180, 120 + 160 * s));
   return { width: w, height: h };
 }
 
@@ -64,13 +72,26 @@ function targetDisplay() {
 function targetBounds() {
   const { workArea } = targetDisplay();
   const cfg = config.load();
+
+  if (!cfg.visible) {
+    // Modo chip ultra-compacto: apenas un pequeño icono en la esquina inferior izquierda
+    const w = 76;
+    const h = 96;
+    return {
+      x: workArea.x + 16,
+      y: workArea.y + workArea.height - h - 16,
+      width: w,
+      height: h,
+    };
+  }
+
   if (cfg.compact) {
-    const dims = compactDimensions(cfg.scale);
+    const dims = compactDimensions(cfg.scale, isOverlayExpanded);
     const w = Math.min(dims.width, workArea.width);
     const h = Math.min(dims.height, workArea.height);
     return {
-      x: workArea.x + 24,
-      y: workArea.y + workArea.height - h - 24,
+      x: workArea.x + 16,
+      y: workArea.y + workArea.height - h - 16,
       width: w,
       height: h,
     };
@@ -116,8 +137,8 @@ function createOverlay() {
     backgroundColor: '#00000000',
     frame: false,
     resizable: true,
-    minWidth: 160,
-    minHeight: 220,
+    minWidth: 48,
+    minHeight: 48,
     movable: true,
     minimizable: false,
     maximizable: false,
@@ -170,6 +191,7 @@ function sendCommand(name, payload = {}) {
 function toggleVisible(force) {
   const visible = typeof force === 'boolean' ? force : !config.load().visible;
   config.save({ visible });
+  fitOverlay();
   overlay?.showInactive();
   sendCommand('stow', { on: !visible });
   rebuildTray();
@@ -383,6 +405,13 @@ function registerIpc() {
       } catch (err) {
         console.error('[capri] setShape error:', err.message);
       }
+    }
+  });
+
+  ipcMain.on('overlay:expanded', (_e, on) => {
+    if (isOverlayExpanded !== Boolean(on)) {
+      isOverlayExpanded = Boolean(on);
+      fitOverlay();
     }
   });
 
