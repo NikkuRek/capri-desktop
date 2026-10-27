@@ -173,13 +173,18 @@ function createOverlay() {
   overlay.webContents.on('render-process-gone', (_e, details) => {
     console.error('[capri] renderer gone:', details.reason);
   });
+  overlay.webContents.on('did-fail-load', (_e, errorCode, errorDescription, validatedURL) => {
+    console.error(`[capri] failed to load ${validatedURL}: ${errorDescription} (${errorCode})`);
+  });
+  overlay.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    const src = sourceId ? String(sourceId).split('/').pop() : 'renderer';
+    if (DEV || level >= 2) {
+      console.log(`[renderer:${level}] ${message} (${src}:${line})`);
+    }
+  });
 
-  if (DEV) {
-    overlay.webContents.on('console-message', (e) => {
-      const { level, message, lineNumber, sourceId } = e;
-      console.log(`[renderer:${level}] ${message} (${String(sourceId).split('/').pop()}:${lineNumber})`);
-    });
-    if (process.env.CAPRI_DEVTOOLS) overlay.webContents.openDevTools({ mode: 'detach' });
+  if (DEV && process.env.CAPRI_DEVTOOLS) {
+    overlay.webContents.openDevTools({ mode: 'detach' });
   }
 }
 
@@ -194,6 +199,7 @@ function toggleVisible(force) {
   fitOverlay();
   overlay?.showInactive();
   sendCommand('stow', { on: !visible });
+  overlay?.webContents.send('capri:config', rendererConfig());
   rebuildTray();
 }
 
@@ -395,10 +401,22 @@ function registerIpc() {
 
 
   ipcMain.on('overlay:set-shape', (_e, rects) => {
-    const valid = Array.isArray(rects)
-      ? rects.filter((r) => r && r.width > 0 && r.height > 0)
-      : [];
-    currentHitRects = valid.length > 0 ? valid : [{ x: -100, y: -100, width: 1, height: 1 }];
+    if (!overlay || overlay.isDestroyed()) return;
+    const b = overlay.getBounds();
+    const valid = [];
+    if (Array.isArray(rects)) {
+      for (const r of rects) {
+        if (!r || typeof r.width !== 'number' || typeof r.height !== 'number') continue;
+        const x1 = Math.max(0, Math.floor(r.x));
+        const y1 = Math.max(0, Math.floor(r.y));
+        const x2 = Math.min(b.width, Math.ceil(r.x + r.width));
+        const y2 = Math.min(b.height, Math.ceil(r.y + r.height));
+        if (x2 > x1 && y2 > y1) {
+          valid.push({ x: x1, y: y1, width: x2 - x1, height: y2 - y1 });
+        }
+      }
+    }
+    currentHitRects = valid.length > 0 ? valid : [{ x: 0, y: 0, width: 1, height: 1 }];
     if (process.platform === 'linux' && typeof overlay?.setShape === 'function') {
       try {
         overlay.setShape(currentHitRects);
@@ -480,11 +498,19 @@ function registerIpc() {
 }
 
 function main() {
-  if (!app.requestSingleInstanceLock()) {
+  const gotLock = app.requestSingleInstanceLock();
+  if (!gotLock) {
+    console.log('[capri] Ya hay una instancia de Capri ejecutándose. Cierra la anterior si deseas reiniciar.');
     app.quit();
     return;
   }
-  app.on('second-instance', () => sendCommand('status'));
+  app.on('second-instance', () => {
+    if (overlay) {
+      overlay.showInactive();
+      fitOverlay();
+    }
+    sendCommand('status');
+  });
 
   app.setName('capri-desktop');
 

@@ -23,7 +23,7 @@ function loadImage(src) {
 const CUTINS = ['grin', 'laugh', 'eyes', 'many', 'look'];
 
 async function boot() {
-  const [config, image, intro, ...cutins] = await Promise.all([
+  let [config, image, intro, ...cutins] = await Promise.all([
     host.getConfig(),
     loadImage('../../assets/capri/capri-full.png'),
     // her intro: her close-up grabbing the screen, and its drawings with her mouth and arm moving
