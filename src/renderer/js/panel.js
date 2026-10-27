@@ -276,9 +276,28 @@ export class Panel {
     this.setFace(face);
     this.quote.textContent = quote;
     this.quote.hidden = !quote;
-    this.line.textContent = '';
-    this.line.classList.add('is-streaming');
+    this.setChatLoading(true, 'Descifrando señal...');
     this.place();
+  }
+
+  // Muestra u oculta la animación de carga mientras el modelo procesa la respuesta
+  setChatLoading(loading, label = 'Descifrando respuesta...') {
+    if (!this.current?.chat) return;
+    clearInterval(this.decodeTimer);
+    if (loading) {
+      this.line.classList.remove('is-streaming');
+      this.line.innerHTML = `
+        <div class="chat-loader">
+          <div class="chat-loader__dots">
+            <span></span><span></span><span></span>
+          </div>
+          <span class="chat-loader__text">${label}</span>
+        </div>
+      `;
+      this.place();
+    } else {
+      this.line.innerHTML = '';
+    }
   }
 
   // Her answer so far (done: all of it).

@@ -123,7 +123,7 @@ export class Chat {
     const messages = [{ role: 'system', content: this.persona() }, ...this.history.slice(-REMEMBER)];
 
     const slow = setTimeout(() => {
-      if (this.turn === id && !this.answer) this.panel.stream(this.t.loading);
+      if (this.turn === id && !this.answer) this.panel.setChatLoading(true, 'Sintonizando con el Net...');
     }, LOADING_AFTER_MS);
 
     const res = await this.host.chatSend({ id, messages });
@@ -137,16 +137,22 @@ export class Chat {
 
     if (!res.ok) {
       this.history.pop();
+      this.panel.setChatLoading(false);
       this.panel.setFace('wide');
       this.panel.stream(`${this.t.failed} ${res.error}`, { done: true });
       this.panel.setChatBusy(false);
       return;
     }
 
+    // Delay breve para transición deliberada y fluida
+    await new Promise((r) => setTimeout(r, 350));
+    this.panel.setChatLoading(false);
+
     const answer = clean(res.text) || '…';
     this.history.push({ role: 'assistant', content: answer });
-    this.panel.stream(answer, { done: true });
     this.panel.setFace(mood(answer));
+    // Decodifica y muestra la respuesta completa ya finalizada
+    this.panel.decode(answer, mood(answer));
     this.panel.setChatBusy(false);
 
     const wanted = this.askedToClose(text) || tagged(res.text);
@@ -222,8 +228,6 @@ export class Chat {
   onDelta(id, piece) {
     if (id !== this.turn) return;
     this.answer += piece;
-    this.panel.stream(clean(this.answer));
-    this.voice.play('blip');
   }
 
   persona() {
