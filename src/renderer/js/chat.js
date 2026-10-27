@@ -152,7 +152,15 @@ export class Chat {
     await new Promise((r) => setTimeout(r, 350));
     this.panel.setChatLoading(false);
 
-    const answer = clean(res.text) || '…';
+    const answer = clean(res.text);
+    if (!answer) {
+      this.history.pop();
+      this.panel.setFace('aside');
+      this.panel.stream('Nosotras no pudimos sintonizar esa señal, choom. Intenta preguntarme de nuevo.', { done: true });
+      this.panel.setChatBusy(false);
+      return;
+    }
+
     this.history.push({ role: 'assistant', content: answer });
     this.panel.setFace(mood(answer));
     // Decodifica y muestra la respuesta completa ya finalizada
@@ -248,6 +256,7 @@ export class Chat {
 }
 
 function clean(text) {
+  if (!text) return '';
   return String(text)
     .replace(/<think>[\s\S]*?(<\/think>|$)/g, '')
     .replace(/\[\[[^\]]*(\]\]|$)/g, '')

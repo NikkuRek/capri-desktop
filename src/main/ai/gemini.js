@@ -13,7 +13,7 @@ function getApiKey() {
 }
 
 function getModel() {
-  return process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+  return process.env.GEMINI_MODEL || 'gemini-3.5-flash';
 }
 
 async function failure(res) {
@@ -43,7 +43,6 @@ async function checkStatus() {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}?key=${apiKey}`;
     const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
     if (!res.ok) {
-      // Si el modelo 2.5 no está disponible o falla, intentamos verificar si la clave es válida con 1.5
       return { ok: false, error: 'invalid_key', model };
     }
     return { ok: true, model };
@@ -54,7 +53,7 @@ async function checkStatus() {
 
 // Transforma el historial de mensajes [ { role: 'user'|'assistant'|'system', content } ]
 // al formato de Gemini Contents y SystemInstruction
-function formatGeminiPayload(messages) {
+function formatGeminiPayload(messages, { disableThinking = true } = {}) {
   let systemText = '';
   const contents = [];
 
@@ -74,12 +73,21 @@ function formatGeminiPayload(messages) {
     contents.push({ role: 'user', parts: [{ text: 'Hola' }] });
   }
 
+  const generationConfig = {
+    temperature: 0.75,
+    maxOutputTokens: 2048,
+  };
+
+  // Desactivar el thinking interno para modelos como Gemini 2.5/3.5 Flash en chat conversacional rápido
+  if (disableThinking) {
+    generationConfig.thinkingConfig = {
+      thinkingBudget: 0,
+    };
+  }
+
   const payload = {
     contents,
-    generationConfig: {
-      temperature: 0.85,
-      maxOutputTokens: 320,
-    },
+    generationConfig,
   };
 
   if (systemText) {
@@ -99,21 +107,61 @@ async function chat({ messages, model: modelOverride }, onDelta, signal) {
   }
 
   const model = modelOverride || getModel();
-  const payload = formatGeminiPayload(messages);
-
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
-  const res = await fetch(url, {
+
+  let payload = formatGeminiPayload(messages, { disableThinking: true });
+  let res = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(payload),
     signal,
   });
 
+  // Si el modelo rechaza thinkingConfig (400), reintentamos sin thinkingConfig
+  if (res.status === 400) {
+    const errorBody = await res.clone().text().catch(() => '');
+    if (errorBody.includes('thinkingConfig') || errorBody.includes('thinkingBudget')) {
+      payload = formatGeminiPayload(messages, { disableThinking: false });
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal,
+      });
+    }
+  }
+
   if (!res.ok) throw await failure(res);
 
   const decoder = new TextDecoder();
   let buffer = '';
   let fullText = '';
+  let finishReason = null;
+
+  function processLine(line) {
+    if (!line.startsWith('data: ')) return;
+    const rawJson = line.slice(6).trim();
+    if (!rawJson || rawJson === '[DONE]') return;
+    try {
+      const parsed = JSON.parse(rawJson);
+      const candidate = parsed.candidates?.[0];
+      if (candidate?.finishReason) {
+        finishReason = candidate.finishReason;
+      }
+      if (candidate?.content?.parts && Array.isArray(candidate.content.parts)) {
+        for (const part of candidate.content.parts) {
+          if (part && typeof part.text === 'string' && part.text.length > 0) {
+            fullText += part.text;
+            if (typeof onDelta === 'function') {
+              onDelta(part.text);
+            }
+          }
+        }
+      }
+    } catch {
+      // Fragmento no parseable, omitir
+    }
+  }
 
   for await (const chunk of res.body) {
     buffer += decoder.decode(chunk, { stream: true });
@@ -121,24 +169,23 @@ async function chat({ messages, model: modelOverride }, onDelta, signal) {
     while ((nl = buffer.indexOf('\n')) >= 0) {
       const line = buffer.slice(0, nl).trim();
       buffer = buffer.slice(nl + 1);
-
-      if (line.startsWith('data: ')) {
-        const rawJson = line.slice(6).trim();
-        if (!rawJson || rawJson === '[DONE]') continue;
-        try {
-          const parsed = JSON.parse(rawJson);
-          const piece = parsed.candidates?.[0]?.content?.parts?.[0]?.text || '';
-          if (piece) {
-            fullText += piece;
-            if (typeof onDelta === 'function') {
-              onDelta(piece);
-            }
-          }
-        } catch {
-          // Fragmento no parseable, omitir
-        }
-      }
+      processLine(line);
     }
+  }
+
+  // Procesar cualquier línea remanente en el buffer
+  if (buffer.trim()) {
+    processLine(buffer.trim());
+  }
+
+  if (!fullText.trim()) {
+    if (finishReason === 'SAFETY') {
+      throw new Error('La respuesta fue bloqueada por filtros de seguridad de Gemini.');
+    }
+    if (finishReason === 'MAX_TOKENS') {
+      throw new Error('Gemini agotó el límite de tokens antes de emitir la respuesta.');
+    }
+    throw new Error('Gemini no generó texto en su respuesta.');
   }
 
   return fullText;
@@ -150,3 +197,5 @@ module.exports = {
   checkStatus,
   chat,
 };
+
+
