@@ -7,6 +7,16 @@ const {
   app, BrowserWindow, Tray, Menu, ipcMain, screen, protocol, net, shell, globalShortcut, nativeImage,
 } = require('electron');
 
+// Optimizaciones de GPU, aceleración por hardware y transparencias en Linux (Wayland / Niri / XWayland)
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
+  app.commandLine.appendSwitch('enable-features', 'WaylandWindowDecorations');
+  app.commandLine.appendSwitch('enable-gpu-rasterization');
+  app.commandLine.appendSwitch('enable-zero-copy');
+  app.commandLine.appendSwitch('ignore-gpu-blocklist');
+  app.commandLine.appendSwitch('enable-transparent-visuals');
+}
+
 const config = require('./config');
 const { TRAY, LANGS } = require('./labels');
 const { startWindowWatch } = require('./windows');
@@ -224,7 +234,6 @@ function createOverlay() {
     focusable: false,
     hasShadow: false,
     alwaysOnTop: true,
-    type: 'toolbar',
     show: false,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload.js'),
@@ -241,6 +250,7 @@ function createOverlay() {
   overlay.loadURL('capri://app/src/renderer/index.html');
   overlay.once('ready-to-show', () => {
     overlay.showInactive();
+    overlay.setIgnoreMouseEvents(true, { forward: true });
     const b = targetBounds();
     setTimeout(() => syncNiriWindowPosition(b.x, b.y), 100);
     if (process.platform === 'linux' && typeof overlay?.setShape === 'function') {
@@ -483,7 +493,11 @@ function createTray() {
 }
 
 function registerIpc() {
-
+  ipcMain.on('overlay:interactive', (_e, on) => {
+    if (overlay && !overlay.isDestroyed()) {
+      overlay.setIgnoreMouseEvents(!on, { forward: true });
+    }
+  });
 
   ipcMain.on('overlay:set-shape', (_e, rects) => {
     if (!overlay || overlay.isDestroyed()) return;
@@ -501,12 +515,16 @@ function registerIpc() {
         }
       }
     }
-    currentHitRects = valid.length > 0 ? valid : [{ x: 0, y: 0, width: 1, height: 1 }];
+    const newRects = valid.length > 0 ? valid : [{ x: 0, y: 0, width: 1, height: 1 }];
+    const isSame = currentHitRects.length === newRects.length &&
+      currentHitRects.every((r, i) => r.x === newRects[i].x && r.y === newRects[i].y && r.width === newRects[i].width && r.height === newRects[i].height);
+    if (isSame) return;
+    currentHitRects = newRects;
     if (process.platform === 'linux' && typeof overlay?.setShape === 'function') {
       try {
         overlay.setShape(currentHitRects);
       } catch (err) {
-        console.error('[capri] setShape error:', err.message);
+        // En Wayland nativo setShape no es necesario o es no-op
       }
     }
   });
