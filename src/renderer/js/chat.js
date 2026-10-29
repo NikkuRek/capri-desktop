@@ -2,6 +2,7 @@
 // Integrada en Linux (CachyOS / Niri) con soporte para cerrar apps y reaccionar a Antigravity IDE.
 
 import { pick, fmt } from './util.js';
+import { parseReminder, clock } from './reminders.js';
 
 const REMEMBER = 12;
 const STAY_MS = 10 * 60 * 1000;
@@ -157,6 +158,31 @@ export class Chat {
       this.brain.custom.memories = [...(this.brain.custom.memories || []).filter((m) => m !== memo), memo].slice(-MEMORIES_MAX);
       this.host.setConfig({ memories: this.brain.custom.memories });
       const answer = `Anotado en mis bancos de memoria cibernética, choom.`;
+      this.turn = 0;
+      this.history.push({ role: 'assistant', content: answer });
+      this.host.chatRemember?.(this.history.slice(-60));
+      this.panel.setFace('smug');
+      this.panel.decode(answer, 'smug');
+      this.panel.setChatBusy(false);
+      return;
+    }
+
+    const remind = parseReminder(text);
+    if (remind) {
+      if (!remind.at) {
+        const answer = '¿Para cuándo quieres que te lo recuerde, choom? (ej: "en 10 minutos" o "a las 18:00").';
+        this.turn = 0;
+        this.history.push({ role: 'assistant', content: answer });
+        this.panel.setFace('aside');
+        this.panel.decode(answer, 'aside');
+        this.panel.setChatBusy(false);
+        return;
+      }
+      this.reminders?.add(remind.at, remind.text);
+      if (this.bond) this.bond.add('remind', 3);
+      const whenStr = clock(remind.at, 'es');
+      const whatStr = remind.text ? ` (${remind.text})` : '';
+      const answer = `Anotado en mi sistema, te avisaré a las ${whenStr}${whatStr}.`;
       this.turn = 0;
       this.history.push({ role: 'assistant', content: answer });
       this.host.chatRemember?.(this.history.slice(-60));

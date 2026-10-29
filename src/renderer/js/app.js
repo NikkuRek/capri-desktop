@@ -6,6 +6,7 @@ import { Voice } from './voice.js';
 import { Brain } from './brain.js';
 import { Chat } from './chat.js';
 import { Bond, Jealousy } from './bond.js';
+import { Reminders } from './reminders.js';
 import { LINES } from './lines.js';
 import { pick } from './util.js';
 
@@ -259,6 +260,29 @@ async function boot() {
   const jealousy = new Jealousy({ capri, panel, brain, bond, chat, guide: {} });
   jealousy.enabled = config.jealous !== false;
   chat.jealousy = jealousy;
+
+  const reminders = new Reminders({ host, list: config.reminders || [] });
+  chat.reminders = reminders;
+  reminders.onDue = (r) => {
+    capri.perform('hop');
+    voice.play('alert');
+    const line = r.text ? `¡Oye! Me pediste que te recordara: ${r.text}` : '¡Oye! Tienes un recordatorio pendiente.';
+    panel.say({
+      kind: 'info',
+      face: 'grin',
+      line,
+      actions: [
+        { id: 'ok', label: 'Entendido', primary: true },
+        { id: 'snooze', label: '10 min más' },
+      ],
+      onAction: (id) => {
+        if (id === 'snooze') reminders.snooze(r.id, 10 * 60 * 1000);
+        else reminders.remove(r.id);
+        panel.hide();
+      },
+      hold: null,
+    });
+  };
 
   capri.onClick = () => {
     if (panel.visible) panel.hide();
