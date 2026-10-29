@@ -1,4 +1,5 @@
 import { Capri } from './capri.js';
+import { SPRITE } from './sprite.js';
 import { FxLayer, GRAB_FRAMES } from './fx.js';
 import { Chip, Mask } from './chip.js';
 import { Panel } from './panel.js';
@@ -327,8 +328,9 @@ async function boot() {
     chip.place(width, height, { center: Boolean(config.compact) });
     capri.setView(width, height);
     if (config.compact) {
-      capri.pos.x = Math.round(width / 2);
-      capri.pos.y = height - 12;
+      const s = capri.scale;
+      capri.pos.x = Math.round((SPRITE.pad + SPRITE.feet.x) * s + 12);
+      capri.pos.y = Math.round((SPRITE.pad + SPRITE.feet.y) * s + 12);
       capri.place();
     }
     updateHitRects();

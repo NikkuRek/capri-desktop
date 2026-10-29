@@ -139,13 +139,13 @@ let isOverlayExpanded = false;
 function compactDimensions(scale = 0.6, expanded = false) {
   const s = typeof scale === 'number' && scale > 0 ? scale : 0.6;
   if (expanded) {
-    const w = Math.round(Math.max(280, 240 + 100 * s));
-    const h = Math.round(Math.max(330, 260 + 120 * s));
+    const w = Math.round(Math.max(480, 360 + 160 * s));
+    const h = Math.round(Math.max(440, 340 + 180 * s));
     return { width: w, height: h };
   }
-  // Modo widget mínimo: recuadro ceñido exactamente alrededor de Capri
-  const w = Math.round(Math.max(130, 80 + 110 * s));
-  const h = Math.round(Math.max(180, 120 + 160 * s));
+  // Dimensiones que cubren la silueta completa de Capri (352x532 con padding) sin recortar cabeza ni extremidades
+  const w = Math.round(352 * s + 24);
+  const h = Math.round(532 * s + 24);
   return { width: w, height: h };
 }
 
