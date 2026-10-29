@@ -11,7 +11,9 @@ export const ease = {
   inOut: (t) => (t < 0.5 ? 8 * t * t * t * t : 1 - Math.pow(-2 * t + 2, 4) / 2),
 };
 
-export const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+export const reducedMotion = typeof matchMedia !== 'undefined'
+  ? matchMedia('(prefers-reduced-motion: reduce)')
+  : { matches: false, addEventListener: () => {}, removeEventListener: () => {} };
 
 // "{project} a fini" + {project: 'x'} -> "x a fini"
 export const fmt = (str, vars = {}) => str.replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? ''));

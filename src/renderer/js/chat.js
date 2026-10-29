@@ -346,7 +346,7 @@ export class Chat {
   }
 }
 
-function clean(text) {
+export function clean(text) {
   if (!text) return '';
   return String(text)
     .replace(/<think>[\s\S]*?(<\/think>|$)/g, '')
@@ -365,7 +365,7 @@ function tagged(text) {
 
 const simple = (text) => String(text || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
 
-function mood(text) {
+export function mood(text) {
   if (/(ha){2,}|lol|mdr|jaja|kkk|jeje/i.test(text)) return 'laugh';
   if (text.includes('!')) return 'grin';
   if (text.trim().endsWith('?')) return 'smug';
