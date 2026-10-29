@@ -8,6 +8,9 @@ const STAY_MS = 10 * 60 * 1000;
 const LOADING_AFTER_MS = 5000;
 const CLOSE_TAG = /\[\[\s*close\s*:?\s*([^\]]*)\]\]/i;
 const CLOSE_ASK = /\b(close|shut|quit|kill|exit)|cierr|cerra|apaga|mata|termina/i;
+const NAME_ASK = /(?:appelle[- ]moi|call me|my name is|je m['’]appelle|ll[aá]mame|me llamo|me cham[ae] de|meu nome [eé]|зови меня|меня зовут)\s+([\p{L}\p{N}'’-]{1,24})/iu;
+const MEMO_ASK = /^\s*(?:capri,?\s+|stp,?\s+|por favor,?\s+|please,?\s+)?(?:souviens[- ]toi(?: que| de)?|n['’]oublie pas(?: que| de)?|remember(?: that)?|recuerda(?: que)?|lembr[ae](?:-se)?(?: que| de)?|запомни,?(?: que)?)\s+(.{3,200})/iu;
+const MEMORIES_MAX = 30;
 
 export class Chat {
   constructor({ capri, panel, voice, host, brain }) {
@@ -23,6 +26,10 @@ export class Chat {
     this.apps = [];
     this.appsReady = Promise.resolve();
     host.onChatDelta?.(({ id, text }) => this.onDelta(id, text));
+    host.onForget?.(() => { this.history = []; });
+    host.chatMemory?.().then((mem) => {
+      if (Array.isArray(mem) && mem.length) this.history = mem.slice(-60);
+    }).catch(() => {});
   }
 
   get t() {
@@ -127,6 +134,38 @@ export class Chat {
     this.panel.chatTurn({ quote: text, face: 'aside' });
     this.capri.pulse();
 
+    const nameMatch = NAME_ASK.exec(text);
+    if (nameMatch) {
+      const name = nameMatch[1].trim();
+      this.brain.custom = this.brain.custom || {};
+      this.brain.custom.userName = name;
+      this.host.setConfig({ userName: name });
+      const answer = `Entendido. A partir de ahora te llamaré ${name}, choom.`;
+      this.turn = 0;
+      this.history.push({ role: 'assistant', content: answer });
+      this.host.chatRemember?.(this.history.slice(-60));
+      this.panel.setFace('laugh');
+      this.panel.decode(answer, 'laugh');
+      this.panel.setChatBusy(false);
+      return;
+    }
+
+    const memoMatch = MEMO_ASK.exec(text);
+    if (memoMatch) {
+      const memo = memoMatch[1].trim();
+      this.brain.custom = this.brain.custom || {};
+      this.brain.custom.memories = [...(this.brain.custom.memories || []).filter((m) => m !== memo), memo].slice(-MEMORIES_MAX);
+      this.host.setConfig({ memories: this.brain.custom.memories });
+      const answer = `Anotado en mis bancos de memoria cibernética, choom.`;
+      this.turn = 0;
+      this.history.push({ role: 'assistant', content: answer });
+      this.host.chatRemember?.(this.history.slice(-60));
+      this.panel.setFace('smug');
+      this.panel.decode(answer, 'smug');
+      this.panel.setChatBusy(false);
+      return;
+    }
+
     await Promise.race([this.appsReady, new Promise((r) => setTimeout(r, 1500))]);
     const messages = [{ role: 'system', content: this.persona() }, ...this.history.slice(-REMEMBER)];
 
@@ -166,6 +205,7 @@ export class Chat {
     }
 
     this.history.push({ role: 'assistant', content: answer });
+    this.host.chatRemember?.(this.history.slice(-60));
     this.panel.setFace(mood(answer));
     // Decodifica y muestra la respuesta completa ya finalizada
     this.panel.decode(answer, mood(answer));
@@ -246,6 +286,17 @@ export class Chat {
     this.answer += piece;
   }
 
+  personal() {
+    const { userName, persona, memories = [] } = this.brain.custom || {};
+    return [
+      userName
+        ? `El usuario se llama ${userName}: llámalo así de vez en cuando de forma cercana.`
+        : 'No conoces el nombre del usuario todavía.',
+      persona ? `Instrucción especial del usuario sobre tu forma de ser: ${persona}` : '',
+      memories.length ? `Cosas que el usuario te pidió recordar:\n${memories.map((m) => `- ${m}`).join('\n')}` : '',
+    ].filter(Boolean);
+  }
+
   persona() {
     return [
       'Eres Capri, el constructo de personalidad de Project Capricorn (Cyberpunk: Edgerunners): docenas de mentes fusionadas en un fantasma digital en Night City, por lo que a veces dices "nosotras".',
@@ -254,6 +305,7 @@ export class Chat {
       'Reglas: responde SIEMPRE en español. Respuestas breves: 1 a 3 oraciones en texto plano, sin markdown excesivo, sin listas con viñetas, sin emojis.',
       'Eres una IA fan constructo, no una persona real de carne y hueso.',
       this.bond?.moodLine(),
+      ...this.personal(),
       ...this.powers(),
       `Estado actual del entorno: ${this.brain.context()}`,
     ].filter(Boolean).join('\n');

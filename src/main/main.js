@@ -34,6 +34,21 @@ let currentHitRects = [];
 let bridgeServer = null;
 
 const userSoundsDir = () => path.join(app.getPath('userData'), 'sounds');
+const memoryFile = () => path.join(app.getPath('userData'), 'memory.json');
+function readMemory() {
+  try {
+    return JSON.parse(fs.readFileSync(memoryFile(), 'utf8'));
+  } catch {
+    return {};
+  }
+}
+function saveMemory(patch) {
+  try {
+    fs.writeFileSync(memoryFile(), JSON.stringify({ ...readMemory(), ...patch }, null, 2));
+  } catch (err) {
+    console.error('[capri] no se pudo guardar memoria:', err.message);
+  }
+}
 
 // capri://app/...        -> files of this repo
 // capri://usersounds/... -> the user's own sound overrides
@@ -293,6 +308,13 @@ function rebuildTray() {
           },
         ],
       },
+      {
+        label: 'Olvidar conversaciones',
+        click: () => {
+          saveMemory({ history: [] });
+          overlay?.webContents.send('chat:forget');
+        },
+      },
       { type: 'separator' },
     );
   }
@@ -482,6 +504,8 @@ function registerIpc() {
       chats.delete(id);
     }
   });
+  ipcMain.handle('chat:memory', () => readMemory().history || []);
+  ipcMain.on('chat:remember', (_e, history) => Array.isArray(history) && saveMemory({ history }));
   ipcMain.on('overlay:focus', (_e, on) => {
     if (overlay && !overlay.isDestroyed()) {
       if (on) {

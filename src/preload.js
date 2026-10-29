@@ -35,4 +35,7 @@ contextBridge.exposeInMainWorld('host', {
   findApp: (wanted) => ipcRenderer.invoke('apps:find', wanted),
   closeApp: (name, force) => ipcRenderer.invoke('apps:close', { name, force: Boolean(force) }),
   focusOverlay: (on) => ipcRenderer.send('overlay:focus', Boolean(on)),
+  chatMemory: () => ipcRenderer.invoke('chat:memory'),
+  chatRemember: (history) => ipcRenderer.send('chat:remember', history),
+  onForget: on('chat:forget'),
 });
