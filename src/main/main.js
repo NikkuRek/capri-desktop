@@ -7,14 +7,12 @@ const {
   app, BrowserWindow, Tray, Menu, ipcMain, screen, protocol, net, shell, globalShortcut, nativeImage,
 } = require('electron');
 
-// Optimizaciones de GPU, aceleración por hardware y transparencias en Linux (Wayland / Niri / XWayland)
+// Optimizaciones de GPU, aceleración por hardware y transparencias en Linux
 if (process.platform === 'linux') {
-  app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
-  app.commandLine.appendSwitch('enable-features', 'WaylandWindowDecorations');
+  app.commandLine.appendSwitch('enable-transparent-visuals');
   app.commandLine.appendSwitch('enable-gpu-rasterization');
   app.commandLine.appendSwitch('enable-zero-copy');
   app.commandLine.appendSwitch('ignore-gpu-blocklist');
-  app.commandLine.appendSwitch('enable-transparent-visuals');
 }
 
 const config = require('./config');
@@ -250,7 +248,6 @@ function createOverlay() {
   overlay.loadURL('capri://app/src/renderer/index.html');
   overlay.once('ready-to-show', () => {
     overlay.showInactive();
-    overlay.setIgnoreMouseEvents(true, { forward: true });
     const b = targetBounds();
     setTimeout(() => syncNiriWindowPosition(b.x, b.y), 100);
     if (process.platform === 'linux' && typeof overlay?.setShape === 'function') {
@@ -493,12 +490,6 @@ function createTray() {
 }
 
 function registerIpc() {
-  ipcMain.on('overlay:interactive', (_e, on) => {
-    if (overlay && !overlay.isDestroyed()) {
-      overlay.setIgnoreMouseEvents(!on, { forward: true });
-    }
-  });
-
   ipcMain.on('overlay:set-shape', (_e, rects) => {
     if (!overlay || overlay.isDestroyed()) return;
     const b = overlay.getBounds();
