@@ -172,6 +172,18 @@ const ES = {
     named: 'Entendido. A partir de ahora te llamaré {name}, choom.',
     remembered: 'Anotado en mis bancos de memoria cibernética.',
   },
+  look: {
+    ask: '¿Quieres que eche un vistazo a tu pantalla?',
+    local: 'Usaré tu modelo local {model}. Nada sale de tu equipo.',
+    online: 'Le enviaré una captura en memoria a {service} ({model}). No se guarda en disco.',
+    auto: 'Si lo activas, miraré de vez en cuando cuando cambies de ventana.',
+    yes: 'Sí, mira',
+    no: 'No, gracias',
+    on: 'Vigilando la pantalla de vez en cuando.',
+    noAI: 'No hay ninguna IA conectada.',
+    noVision: 'El modelo {model} no puede procesar imágenes.',
+    failed: 'No pude capturar la pantalla: {error}',
+  },
   reply: ['Antigravity respondió:', 'Esto dijo el agente:', 'Mensaje recibido:'],
   showcase: {
     minds: 'Hay mucha gente aquí dentro.',

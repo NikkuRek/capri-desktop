@@ -50,6 +50,68 @@ function saveMemory(patch) {
   }
 }
 
+const snaps = new Map();
+async function snapScreen() {
+  try {
+    const { execSync } = require('child_process');
+    const b64 = execSync('grim -t jpeg - | base64', { timeout: 3500, maxBuffer: 12 * 1024 * 1024 })
+      .toString('utf8').replace(/\s+/g, '');
+    if (b64) return b64;
+  } catch {}
+  const { desktopCapturer } = require('electron');
+  const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1280, height: 720 } });
+  const src = sources[0];
+  if (!src || src.thumbnail.isEmpty()) throw new Error('No se pudo capturar la pantalla');
+  return src.thumbnail.toJPEG(75).toString('base64');
+}
+
+async function sayAboutSnap({ id, persona, prompt }) {
+  const image = snaps.get(id);
+  snaps.delete(id);
+  if (!image) return { ok: false, error: 'La captura de pantalla expiró' };
+  const cfg = config.load();
+  if ((cfg.aiProvider || 'gemini') === 'gemini') {
+    const apiKey = ai.gemini.getApiKey();
+    if (!apiKey) return { ok: false, code: 'noai', error: 'Falta GEMINI_API_KEY en .env' };
+    const model = ai.gemini.getModel();
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const payload = {
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { text: `${persona || ''}\n\n${prompt || ''}` },
+            { inlineData: { mimeType: 'image/jpeg', data: image } }
+          ]
+        }
+      ],
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 256,
+        thinkingConfig: { thinkingBudget: 0 }
+      }
+    };
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        return { ok: false, error: err.error?.message || `HTTP ${res.status}`, model };
+      }
+      const data = await res.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      return { ok: true, text, model };
+    } catch (err) {
+      return { ok: false, error: err.message, model };
+    }
+  } else {
+    return { ok: false, code: 'novision', model: 'Ollama Llama 3' };
+  }
+}
+
 // capri://app/...        -> files of this repo
 // capri://usersounds/... -> the user's own sound overrides
 function serveProtocol() {
@@ -291,6 +353,7 @@ function rebuildTray() {
   if (isFull) {
     menuItems.push(
       { label: t.chat || 'Hablar con Capri', click: () => sendCommand('chat') },
+      { label: 'Escanear pantalla', click: () => sendCommand('look') },
       {
         label: t.provider || 'Proveedor de IA',
         submenu: [
@@ -506,6 +569,25 @@ function registerIpc() {
   });
   ipcMain.handle('chat:memory', () => readMemory().history || []);
   ipcMain.on('chat:remember', (_e, history) => Array.isArray(history) && saveMemory({ history }));
+  ipcMain.handle('look:snap', async () => {
+    try {
+      const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      snaps.set(id, await snapScreen());
+      setTimeout(() => snaps.delete(id), 120000);
+      return { ok: true, id };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+  ipcMain.handle('look:say', (_e, request) => sayAboutSnap(request || {}));
+  ipcMain.handle('look:where', () => {
+    const cfg = config.load();
+    return {
+      local: cfg.aiProvider === 'ollama',
+      provider: cfg.aiProvider === 'gemini' ? 'Google Gemini Flash' : 'Ollama local',
+      model: cfg.aiProvider === 'gemini' ? ai.gemini.getModel() : 'llama3'
+    };
+  });
   ipcMain.on('overlay:focus', (_e, on) => {
     if (overlay && !overlay.isDestroyed()) {
       if (on) {

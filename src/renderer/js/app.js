@@ -7,6 +7,7 @@ import { Brain } from './brain.js';
 import { Chat } from './chat.js';
 import { Bond, Jealousy } from './bond.js';
 import { Reminders } from './reminders.js';
+import { Look } from './look.js';
 import { LINES } from './lines.js';
 import { pick } from './util.js';
 
@@ -284,6 +285,24 @@ async function boot() {
     });
   };
 
+  const look = new Look({
+    capri,
+    panel,
+    brain,
+    chat,
+    guide: {
+      scene: async (fn) => fn(),
+      ask: async () => 'yes',
+      askText: async () => null,
+      running: false,
+    },
+    host,
+    fx,
+    voice,
+    active: () => performance.now() - lastMove,
+  });
+  look.configure(config);
+
   capri.onClick = () => {
     if (panel.visible) panel.hide();
     else if (!jealousy.onClick()) {
@@ -348,6 +367,9 @@ async function boot() {
         if (config.mode !== 'only-view') {
           chat.start();
         }
+        break;
+      case 'look':
+        look.once();
         break;
       case 'status':
         brain.status();

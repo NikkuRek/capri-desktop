@@ -312,6 +312,14 @@ export class Chat {
     this.answer += piece;
   }
 
+  lookPersona() {
+    return this.persona();
+  }
+
+  languageNote() {
+    return 'Responde en español con tu personalidad cyberpunk de Capri en 1 o 2 oraciones breves.';
+  }
+
   personal() {
     const { userName, persona, memories = [] } = this.brain.custom || {};
     return [
