@@ -136,7 +136,9 @@ async function boot() {
     }
   };
 
+  let lastMove = performance.now();
   window.addEventListener('mousemove', (e) => {
+    lastMove = performance.now();
     mouse = { x: e.clientX, y: e.clientY };
     refreshHit();
     hoverChip();
@@ -155,6 +157,18 @@ async function boot() {
   window.addEventListener('click', (e) => {
     if (chip.visible && (chip.contains(e.clientX, e.clientY, 8) || config.compact || innerWidth <= 120)) comeOut();
   });
+
+  // Rescate de eventos de ratón si el cursor se detiene sobre Capri
+  setInterval(async () => {
+    const at = await host.cursor?.().catch(() => null);
+    if (!at?.inside) return;
+    const now = performance.now();
+    if (!interactive && now - lastMove > 2000) {
+      mouse = { x: at.x, y: at.y };
+      refreshHit();
+      updateHitRects();
+    }
+  }, 2000);
 
   // wiring
   capri.onMove = (head) => {
@@ -197,6 +211,42 @@ async function boot() {
     if (!panel.visible && Math.random() < (when === 'end' ? 0.6 : 0.4)) {
       panel.say({ kind: 'info', line: pick(lines), hold: 3800 });
     }
+  };
+
+  // Reacciones físicas cuando Capri es lanzada
+  const throws = [];
+  capri.onThrown = ({ how, hard = 0 }) => {
+    const t = brain.t.thrown;
+    if (!t) return;
+    if (how === 'leap') {
+      if (Math.random() < 0.4 && brain.t.screens?.hello) {
+        panel.say({ kind: 'info', face: 'smug', line: pick(brain.t.screens.hello), hold: 3000 });
+      }
+      return;
+    }
+    const now = performance.now();
+    throws.push(now);
+    while (throws.length && now - throws[0] > 120000) throws.shift();
+    let line, face = 'smug';
+    if (throws.length >= 3) {
+      throws.length = 0;
+      line = pick(t.angry);
+      face = 'many';
+      capri.refuseUntil = now + 25000;
+      if (mouse) capri.zap(mouse.x, mouse.y);
+    } else if (how === 'ledge') line = pick(t.ledge);
+    else if (how === 'feet') line = pick(t.feet);
+    else if (throws.length === 2) {
+      line = pick(t.again);
+      face = 'aside';
+    } else if (hard > 0.75 && Math.random() < 0.5) {
+      line = pick(t.screen);
+      face = 'laugh';
+    } else {
+      line = pick(t.ow);
+      face = 'wide';
+    }
+    panel.say({ kind: 'info', face, line, hold: 4200 });
   };
 
   capri.onClick = () => {

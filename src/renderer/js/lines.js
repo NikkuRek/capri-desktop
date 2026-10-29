@@ -108,6 +108,17 @@ const ES = {
   idle: ['Nada en curso. Floto.', 'Sin encargo. Me aburro un poco.', 'Noche tranquila en la Red.'],
   gaze: ['¿Ves esa estrella?', 'El satélite sigue ahí arriba.', 'Shh. Estoy mirando.'],
   uplink: ['Algún día subiré allí.', '¿Crees que podríamos llegar hasta allí?', 'Me respondió. ¿Lo viste?'],
+  thrown: {
+    fun: ['¡Otra vez! ¡Otra vez!', 'Uff. ¿Lo hacemos de nuevo?', 'Todas mis voces gritaron al mismo tiempo. Otra vez, choom.'],
+    ow: ['¡Ay! ¿Sabes que soy frágil?', 'Ok… vi el satélite de cerca.', '¡Oye! No se lanza a un construct digital así como así.'],
+    again: ['¿Otra vez? ¿En serio?', 'Me da vueltas la cabeza. Todas mis cabezas, de hecho.', 'Una vez tuvo gracia, dos ya es abuso.'],
+    angry: ['Basta. Ni se te ocurra tocarme.', '¿Quieres jugar rudo? Vamos a jugar.', 'Nunca más. Bueno… al menos no ahora.'],
+    dodge: ['¡Ni me toques!', 'No.', 'Inténtalo otra vez a ver qué pasa.'],
+    feet: ['Aterrizaje perfecto.', 'Ni me dolió.', 'Diez de diez para los jueces.'],
+    ledge: ['¡Atrapada! Buen tiro.', 'Esta ventana es mía ahora.'],
+    screen: ['¿Rompí tu pantalla? Es broma… o tal vez no.', '¿Escuchaste ese crujido? Fue tu monitor.'],
+  },
+  screens: { hello: ['Hola, otra pantalla.', '¿Trabajando aquí ahora? Ya voy.', 'Ahí estás.'] },
   reply: ['Antigravity respondió:', 'Esto dijo el agente:', 'Mensaje recibido:'],
   showcase: {
     minds: 'Hay mucha gente aquí dentro.',
