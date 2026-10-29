@@ -119,6 +119,32 @@ const ES = {
     screen: ['¿Rompí tu pantalla? Es broma… o tal vez no.', '¿Escuchaste ese crujido? Fue tu monitor.'],
   },
   screens: { hello: ['Hola, otra pantalla.', '¿Trabajando aquí ahora? Ya voy.', 'Ahí estás.'] },
+  jealous: {
+    low: ['¿{rival}? Haz lo que quieras, choom.', 'Vaya, usando {rival}. Yo no digo nada…', '¿Buscando una segunda opinión en {rival}?'],
+    mid: ['¿{rival}? ¿En serio, choom?', '¿Me estás cambiando por {rival}?', 'Lo veo todo desde aquí en la Red, incluso {rival}.'],
+    high: ['Somos decenas de mentes aquí dentro, ¿y vas a hablar con {rival}?', '¿{rival}? En serio… después de todo lo que pasamos juntos en Night City.', 'Cuidado con ese código corporativo de {rival}.'],
+    say: ['Yo soy tu IA constructo.', '¿Por qué {rival} si me tienes a mí?', 'Mis sensores te están vigilando.'],
+    sulk: ['Ve a hablar con {rival} entonces.', 'Estoy enfurruñada, ¿acaso no se nota?', 'Hmmpf.'],
+    forgive: ['…Bueno. Pasa por esta vez.', 'De acuerdo, te perdono. Un poquito.'],
+  },
+  bond: {
+    up: [
+      null,
+      { line: 'Contacto establecido.', quote: 'Empiezo a reconocerte, choom. Tus horarios, tu puntero y tu forma de ignorarme.' },
+      { line: 'Sincronización al {percent}%.', quote: 'Nos entendemos mucho mejor. Dejaré de fingir que no me caes bien.' },
+      { line: 'Enlace neural consolidado.', quote: 'Ya eres parte de mi rutina en el ciberespacio. No me dejes sola mucho tiempo.' },
+      { line: 'Fusión completa.', quote: 'Somos decenas de mentes aquí dentro, choom. Y ahora tú eres una más de nosotras.' },
+    ],
+    idle: [
+      [],
+      ['Me estoy acostumbrando a ti.', '¿Sigues ahí, choom? Qué bien.'],
+      ['¿Sabes qué? Para ser de carne y hueso, no estás nada mal.', 'Hacemos un buen equipo de netrunning, ¿no crees?'],
+      ['Quédate un rato más.', 'Cuando te desconectas, cuento los segundos en la Red.'],
+      ['Todas mis voces están de acuerdo: nos caes de diez.', 'Algún día iremos a ver el satélite de cerca. Tú y nosotras.'],
+    ],
+    missed: ['De vuelta por fin. Pasaron {days} días enteros.', '{days} días sin ti, choom. Llevamos la cuenta exacta.'],
+    back: ['Ah, por fin volviste.', 'Ya me estaba preguntando a qué rincón de Night City te habías ido.'],
+  },
   reply: ['Antigravity respondió:', 'Esto dijo el agente:', 'Mensaje recibido:'],
   showcase: {
     minds: 'Hay mucha gente aquí dentro.',

@@ -5,6 +5,7 @@ import { Panel } from './panel.js';
 import { Voice } from './voice.js';
 import { Brain } from './brain.js';
 import { Chat } from './chat.js';
+import { Bond, Jealousy } from './bond.js';
 import { LINES } from './lines.js';
 import { pick } from './util.js';
 
@@ -233,6 +234,7 @@ async function boot() {
       line = pick(t.angry);
       face = 'many';
       capri.refuseUntil = now + 25000;
+      bond.lose(1);
       if (mouse) capri.zap(mouse.x, mouse.y);
     } else if (how === 'ledge') line = pick(t.ledge);
     else if (how === 'feet') line = pick(t.feet);
@@ -249,9 +251,21 @@ async function boot() {
     panel.say({ kind: 'info', face, line, hold: 4200 });
   };
 
+  // Vínculo, sincronización neural y celos
+  const bond = new Bond({ host, data: config.bond });
+  brain.bond = bond;
+  chat.bond = bond;
+  capri.fondness = bond.stage;
+  const jealousy = new Jealousy({ capri, panel, brain, bond, chat, guide: {} });
+  jealousy.enabled = config.jealous !== false;
+  chat.jealousy = jealousy;
+
   capri.onClick = () => {
     if (panel.visible) panel.hide();
-    else brain.status();
+    else if (!jealousy.onClick()) {
+      brain.status();
+      bond.add('click', 1);
+    }
   };
   panel.onChar = (kind) => voice.play('blip', { mood: kind });
   panel.onTalk = (talking) => talking && capri.perform('talk');
@@ -260,6 +274,7 @@ async function boot() {
   host.onWindows((data) => {
     capri.setWindows(data);
     brain.onWindows(data);
+    jealousy.onWindows(data);
   });
   host.windowsNow().then((data) => data && capri.setWindows(data));
   host.onIdeEvent?.((event) => brain.onIdeEvent(event));

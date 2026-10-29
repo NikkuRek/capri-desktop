@@ -114,6 +114,10 @@ export class Chat {
 
   async send(text) {
     if (this.turn || !this.open) return;
+    if (this.bond) {
+      this.bond.heard(text);
+      this.bond.add('chat', 2);
+    }
     const id = Date.now();
     this.turn = id;
     this.answer = '';
@@ -249,9 +253,10 @@ export class Chat {
       'Tu tono: juguetona, traviesa, ligeramente burlona, leal y cálida en el fondo. Usas jerga de Night City de vez en cuando (choom, preem, nova, gonk, flatline).',
       'Reglas: responde SIEMPRE en español. Respuestas breves: 1 a 3 oraciones en texto plano, sin markdown excesivo, sin listas con viñetas, sin emojis.',
       'Eres una IA fan constructo, no una persona real de carne y hueso.',
+      this.bond?.moodLine(),
       ...this.powers(),
       `Estado actual del entorno: ${this.brain.context()}`,
-    ].join('\n');
+    ].filter(Boolean).join('\n');
   }
 }
 
