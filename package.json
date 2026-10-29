@@ -12,7 +12,9 @@
     "dev": "electron --ozone-platform=x11 . --dev",
     "dev:wayland": "electron --ozone-platform-hint=auto --enable-features=WaylandWindowDecorations . --dev",
     "dist": "electron-builder --linux",
-    "dist:linux": "electron-builder --linux"
+    "dist:linux": "electron-builder --linux",
+    "hooks:agy:install": "node scripts/install-hooks-agy.js",
+    "hooks:agy:uninstall": "node scripts/install-hooks-agy.js --uninstall"
   },
   "keywords": [
     "desktop-pet",
