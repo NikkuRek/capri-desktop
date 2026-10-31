@@ -10,7 +10,7 @@ import { Bond, Jealousy } from './bond.js';
 import { Reminders } from './reminders.js';
 import { Look } from './look.js';
 import { LINES } from './lines.js';
-import { pick } from './util.js';
+import { pick, clamp } from './util.js';
 
 const host = window.host;
 
@@ -331,6 +331,10 @@ async function boot() {
       const s = capri.scale;
       capri.pos.x = Math.round((SPRITE.pad + SPRITE.feet.x) * s + 12);
       capri.pos.y = Math.round((SPRITE.pad + SPRITE.feet.y) * s + 12);
+      capri.place();
+    } else {
+      capri.pos.x = clamp(capri.pos.x, 80, width - 80);
+      capri.pos.y = clamp(capri.pos.y, 100, height - 12);
       capri.place();
     }
     updateHitRects();

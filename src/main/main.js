@@ -16,6 +16,18 @@ if (process.platform === 'linux') {
 }
 
 const config = require('./config');
+
+function applyRender() {
+  const { render } = config.load();
+  if (render === 'gl') {
+    app.commandLine.appendSwitch('use-angle', 'gl');
+    app.commandLine.appendSwitch('use-gl', 'desktop');
+  } else if (render === 'software') {
+    app.disableHardwareAcceleration();
+    app.commandLine.appendSwitch('enable-unsafe-swiftshader');
+  }
+}
+applyRender();
 const { TRAY, LANGS } = require('./labels');
 const { startWindowWatch } = require('./windows');
 const commands = require('./commands');
@@ -184,21 +196,52 @@ function targetBounds() {
   return workArea;
 }
 
-function syncNiriWindowPosition(targetX, targetY) {
+function findNiriOutputForDisplay(display, outputs) {
+  if (!display || !outputs) return null;
+  const match = Object.entries(outputs).find(([_, out]) =>
+    Math.abs(out.logical.x - display.bounds.x) < 5 && Math.abs(out.logical.y - display.bounds.y) < 5
+  );
+  return match ? match[0] : null;
+}
+
+function syncNiriWindowPosition(targetX, targetY, targetDisplay) {
   if (process.platform !== 'linux') return;
   try {
-    const { execSync } = require('node:child_process');
-    const out = execSync('niri msg --json windows', { timeout: 1000 }).toString();
-    const wins = JSON.parse(out);
+    const { spawnSync } = require('node:child_process');
+    const rawWins = spawnSync('niri', ['msg', '--json', 'windows'], { encoding: 'utf8', timeout: 1000 }).stdout;
+    if (!rawWins) return;
+    const wins = JSON.parse(rawWins);
     const capriWin = wins.find((w) => w.title === 'Capri');
-    if (!capriWin || !capriWin.layout?.tile_pos_in_workspace_view) return;
-    const [currentX, currentY] = capriWin.layout.tile_pos_in_workspace_view;
-    const dx = Math.round(targetX - currentX);
-    const dy = Math.round(targetY - currentY);
+    if (!capriWin) return;
+
+    if (targetDisplay) {
+      const rawOutputs = spawnSync('niri', ['msg', '--json', 'outputs'], { encoding: 'utf8', timeout: 1000 }).stdout;
+      const outputs = rawOutputs ? JSON.parse(rawOutputs) : {};
+      const targetOutput = findNiriOutputForDisplay(targetDisplay, outputs);
+      if (targetOutput) {
+        const rawWs = spawnSync('niri', ['msg', '--json', 'workspaces'], { encoding: 'utf8', timeout: 1000 }).stdout;
+        const workspaces = rawWs ? JSON.parse(rawWs) : [];
+        const currentWs = workspaces.find((w) => w.id === capriWin.workspace_id);
+        if (currentWs && currentWs.output !== targetOutput) {
+          spawnSync('niri', ['msg', 'action', 'move-window-to-monitor', '--id', String(capriWin.id), targetOutput], { timeout: 1000 });
+        }
+      }
+    }
+
+    const localTargetX = targetDisplay ? Math.round(targetX - targetDisplay.bounds.x) : Math.round(targetX);
+    const localTargetY = targetDisplay ? Math.round(targetY - targetDisplay.bounds.y) : Math.round(targetY);
+
+    const rawAfter = spawnSync('niri', ['msg', '--json', 'windows'], { encoding: 'utf8', timeout: 1000 }).stdout;
+    const updatedWin = (rawAfter ? JSON.parse(rawAfter) : []).find((w) => w.id === capriWin.id) || capriWin;
+
+    if (!updatedWin.layout?.tile_pos_in_workspace_view) return;
+    const [currentX, currentY] = updatedWin.layout.tile_pos_in_workspace_view;
+    const dx = Math.round(localTargetX - currentX);
+    const dy = Math.round(localTargetY - currentY);
     if (dx !== 0 || dy !== 0) {
       const signX = dx >= 0 ? `+${dx}` : `${dx}`;
       const signY = dy >= 0 ? `+${dy}` : `${dy}`;
-      execSync(`niri msg action move-floating-window --id ${capriWin.id} -x '${signX}' -y '${signY}'`, { timeout: 1000 });
+      spawnSync('niri', ['msg', 'action', 'move-floating-window', '--id', String(updatedWin.id), '-x', signX, '-y', signY], { timeout: 1000 });
     }
   } catch {
     // Omitir si no es Niri
@@ -208,9 +251,10 @@ function syncNiriWindowPosition(targetX, targetY) {
 function fitOverlay() {
   if (!overlay) return;
   const b = targetBounds();
+  const d = targetDisplay();
   overlay.setBounds(b);
   overlay.webContents.send('overlay:resize', { width: b.width, height: b.height });
-  setTimeout(() => syncNiriWindowPosition(b.x, b.y), 50);
+  setTimeout(() => syncNiriWindowPosition(b.x, b.y, d), 50);
 }
 
 function createOverlay() {
@@ -249,7 +293,8 @@ function createOverlay() {
   overlay.once('ready-to-show', () => {
     overlay.showInactive();
     const b = targetBounds();
-    setTimeout(() => syncNiriWindowPosition(b.x, b.y), 100);
+    const d = targetDisplay();
+    setTimeout(() => syncNiriWindowPosition(b.x, b.y, d), 100);
     if (process.platform === 'linux' && typeof overlay?.setShape === 'function') {
       overlay.setShape([{ x: 0, y: 0, width: 1, height: 1 }]);
     }
@@ -338,6 +383,15 @@ function rebuildTray() {
   const current = targetDisplay().id;
 
   const isFull = cfg.mode !== 'only-view';
+
+  let niriOutputs = {};
+  if (process.platform === 'linux') {
+    try {
+      const { spawnSync } = require('node:child_process');
+      const raw = spawnSync('niri', ['msg', '--json', 'outputs'], { encoding: 'utf8', timeout: 500 }).stdout;
+      if (raw) niriOutputs = JSON.parse(raw);
+    } catch {}
+  }
 
   const menuItems = [
     { label: `${t.title} (${isFull ? 'Full' : 'Only-View'})`, enabled: false },
@@ -451,11 +505,52 @@ function rebuildTray() {
     {
       label: t.screen,
       enabled: displays.length > 1,
-      submenu: displays.map((d, i) => ({
-        label: `${i + 1} — ${d.size.width}×${d.size.height}`,
+      submenu: displays.map((d, i) => {
+        const match = Object.entries(niriOutputs).find(([_, out]) =>
+          Math.abs(out.logical.x - d.bounds.x) < 5 && Math.abs(out.logical.y - d.bounds.y) < 5
+        );
+        const outName = match ? ` (${match[0]})` : '';
+        return {
+          label: `${i + 1} — ${d.size.width}×${d.size.height}${outName}`,
+          type: 'radio',
+          checked: d.id === current,
+          click: () => {
+            config.save({ displayId: d.id });
+            fitOverlay();
+            rebuildTray();
+          },
+        };
+      }),
+    },
+    {
+      label: t.motion,
+      submenu: [
+        ['auto', t.motionAuto],
+        ['full', t.motionFull],
+        ['reduced', t.motionReduced],
+      ].map(([motion, label]) => ({
+        label,
         type: 'radio',
-        checked: d.id === current,
-        click: () => { config.save({ displayId: d.id }); fitOverlay(); rebuildTray(); },
+        checked: (cfg.motion || 'auto') === motion,
+        click: () => updateConfig({ motion, motionAsked: true }),
+      })),
+    },
+    {
+      label: t.display,
+      submenu: [
+        ['auto', t.displayAuto],
+        ['gl', t.displayGl],
+        ['software', t.displaySoftware],
+      ].map(([render, label]) => ({
+        label,
+        type: 'radio',
+        checked: (cfg.render || 'auto') === render,
+        click: () => {
+          if (cfg.render === render) return;
+          config.save({ render });
+          app.relaunch();
+          app.quit();
+        },
       })),
     },
     { label: t.wander, type: 'checkbox', checked: cfg.wander, click: (item) => updateConfig({ wander: item.checked }) },

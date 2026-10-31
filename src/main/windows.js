@@ -14,20 +14,14 @@ function startNiriWatch({ overlay, onUpdate }) {
   let cachedWorkspaces = [];
   let computeTimer = null;
 
-  function getOutputs() {
+  function getOutputsMap() {
     try {
       const raw = spawnSync('niri', ['msg', '--json', 'outputs'], { encoding: 'utf8', timeout: 2000 }).stdout;
-      const parsed = JSON.parse(raw);
-      const firstKey = Object.keys(parsed)[0];
-      return parsed[firstKey]?.logical || { width: 1920, height: 1080 };
+      return JSON.parse(raw);
     } catch {
-      return { width: 1920, height: 1080 };
+      return {};
     }
   }
-
-  const output = getOutputs();
-  const screenW = output.width;
-  const screenH = output.height;
 
   function compute() {
     if (!overlay || overlay.isDestroyed()) return;
@@ -35,6 +29,11 @@ function startNiriWatch({ overlay, onUpdate }) {
 
     const activeWs = cachedWorkspaces.find((w) => w.is_active);
     if (!activeWs) return;
+
+    const outputs = getOutputsMap();
+    const activeLogical = outputs[activeWs.output]?.logical;
+    const screenW = activeLogical?.width || bounds.width || 1920;
+    const screenH = activeLogical?.height || bounds.height || 1080;
 
     const currentWins = cachedWindows.filter(
       (w) => w.workspace_id === activeWs.id && w.app_id !== 'capri' && w.pid !== process.pid
