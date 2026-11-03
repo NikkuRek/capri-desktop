@@ -44,6 +44,8 @@ const TRAY = {
     screen: 'Pantalla',
     wander: 'Deambular cuando esté libre',
     possess: 'Poseer ventanas aleatoriamente',
+    theme: 'Estilo de sus ventanas',
+    themeClassic: 'Clásico (Classique)',
     startup: 'Iniciar al encender el sistema',
     quit: 'Salir',
   },

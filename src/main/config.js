@@ -16,6 +16,7 @@ const DEFAULTS = {
   possess: true,     // now and then she dives into the window she sits on and takes it over
   visible: true,
   compact: true,     // small widget box vs fullscreen
+  theme: 'nightcity', // 'nightcity' | 'classic'
 };
 
 let cache = null;

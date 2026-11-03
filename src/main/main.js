@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('node:path');
+const os = require('node:os');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const {
@@ -34,6 +35,7 @@ const commands = require('./commands');
 const { loadEnv } = require('./env');
 const ai = require('./ai');
 const apps = require('./apps');
+const system = require('./system');
 const { createBridge } = require('./bridge');
 
 const ROOT = path.resolve(__dirname, '..', '..');
@@ -255,6 +257,15 @@ function fitOverlay() {
   overlay.setBounds(b);
   overlay.webContents.send('overlay:resize', { width: b.width, height: b.height });
   setTimeout(() => syncNiriWindowPosition(b.x, b.y, d), 50);
+}
+
+function rearmOverlay() {
+  if (!overlay || overlay.isDestroyed()) return;
+  overlay.setIgnoreMouseEvents(false);
+  overlay.setIgnoreMouseEvents(true, { forward: true });
+  overlay.setAlwaysOnTop(true, 'screen-saver');
+  fitOverlay();
+  sendCommand('rearmed');
 }
 
 function createOverlay() {
@@ -553,6 +564,13 @@ function rebuildTray() {
         },
       })),
     },
+    {
+      label: t.theme || 'Estilo de sus ventanas',
+      submenu: [
+        { label: 'Night City', type: 'radio', checked: (cfg.theme || 'nightcity') === 'nightcity', click: () => updateConfig({ theme: 'nightcity' }) },
+        { label: t.themeClassic || 'Clásico (Classique)', type: 'radio', checked: cfg.theme === 'classic', click: () => updateConfig({ theme: 'classic' }) },
+      ],
+    },
     { label: t.wander, type: 'checkbox', checked: cfg.wander, click: (item) => updateConfig({ wander: item.checked }) },
     { label: t.possess, type: 'checkbox', checked: cfg.possess, click: (item) => updateConfig({ possess: item.checked }) },
 
@@ -702,6 +720,30 @@ function registerIpc() {
       }
     }
   });
+  ipcMain.on('overlay:rearm', () => rearmOverlay());
+  ipcMain.handle('windows:closePage', (_e, { id, key }) => windowWatch?.close?.(id, key) ?? 'gone');
+  ipcMain.handle('screens:list', () => {
+    const o = overlay?.getBounds() || { x: 0, y: 0 };
+    return {
+      current: targetDisplay().id,
+      origin: { x: o.x, y: o.y },
+      list: screen.getAllDisplays().map(({ id, bounds: b }) => ({ id, x: b.x, y: b.y, w: b.width, h: b.height })),
+    };
+  });
+  let cpuBefore = null;
+  ipcMain.handle('pc:cpu', () => {
+    const now = os.cpus().map(({ times: t }) => ({ idle: t.idle, total: t.user + t.nice + t.sys + t.idle + t.irq }));
+    const before = cpuBefore;
+    cpuBefore = now;
+    if (!before) return null;
+    let idle = 0, total = 0;
+    now.forEach((c, i) => {
+      idle += c.idle - (before[i]?.idle ?? 0);
+      total += c.total - (before[i]?.total ?? 0);
+    });
+    return total > 0 ? Math.round(((total - idle) / total) * 100) : 0;
+  });
+  ipcMain.handle('pc:do', (_e, req) => Promise.resolve(system.act(req, { display: targetDisplay() })).catch(() => null));
   ipcMain.handle('apps:list', () => apps.list());
   ipcMain.handle('apps:find', (_e, wanted) => apps.find(wanted));
   ipcMain.handle('apps:close', (_e, { name, force }) => apps.close(name, { force }));

@@ -11,9 +11,21 @@ export const ease = {
   inOut: (t) => (t < 0.5 ? 8 * t * t * t * t : 1 - Math.pow(-2 * t + 2, 4) / 2),
 };
 
-export const reducedMotion = typeof matchMedia !== 'undefined'
-  ? matchMedia('(prefers-reduced-motion: reduce)')
-  : { matches: false, addEventListener: () => {}, removeEventListener: () => {} };
+// Calmer animations: when Windows has its animation effects off (prefers-reduced-motion), unless
+// her menu says otherwise (Animations: like Windows, full, reduced). Read live: `.matches`.
+const systemReduced = matchMedia('(prefers-reduced-motion: reduce)');
+export const reducedMotion = {
+  setting: 'auto', // 'auto' (like Windows), 'full' or 'reduced'
+  get matches() {
+    return this.setting === 'reduced' || (this.setting === 'auto' && systemReduced.matches);
+  },
+  get system() {
+    return systemReduced.matches;
+  },
+  onSystemChange(fn) {
+    systemReduced.addEventListener('change', fn);
+  },
+};
 
 // "{project} a fini" + {project: 'x'} -> "x a fini"
 export const fmt = (str, vars = {}) => str.replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? ''));
