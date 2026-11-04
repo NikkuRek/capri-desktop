@@ -61,10 +61,16 @@ export class Panel {
     // talking to her (chat.js): a line to type in, under her answer
     this.chatForm = panel.querySelector('.panel__chat');
     this.chatInput = panel.querySelector('.panel__input');
+    this.chatMic = panel.querySelector('.panel__mic');
     this.chatSend = panel.querySelector('.panel__send');
     this.chatClose = panel.querySelector('.panel__close');
     this.note = panel.querySelector('.panel__note');
     this.chatForm.addEventListener('click', (e) => e.stopPropagation());
+    this.chatMic?.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.current?.onMic?.();
+    });
     this.chatForm.addEventListener('submit', (e) => {
       e.preventDefault();
       const text = this.chatInput.value.trim();
@@ -285,8 +291,10 @@ export class Panel {
     this.chatInput.setAttribute('aria-label', chat.placeholder);
     this.chatInput.disabled = false;
     this.chatSend.disabled = false;
-    this.chatSend.textContent = chat.send;
+    this.chatSend.setAttribute('aria-label', chat.send);
+    this.chatSend.setAttribute('title', chat.send || 'Enviar (Enter)');
     this.chatClose.setAttribute('aria-label', chat.close);
+    this.chatClose.setAttribute('title', chat.close || 'Cerrar (Esc)');
     if (chat.note) {
       const tag = document.createElement('b');
       tag.textContent = chat.noteTag || '';
@@ -370,7 +378,14 @@ export class Panel {
   setChatBusy(busy) {
     this.chatInput.disabled = busy;
     this.chatSend.disabled = busy;
+    if (this.chatMic) this.chatMic.disabled = busy;
     if (!busy && this.current?.chat) this.chatInput.focus();
+  }
+
+  setMicListening(listening) {
+    if (!this.chatMic) return;
+    this.chatMic.classList.toggle('is-listening', Boolean(listening));
+    this.chatMic.setAttribute('title', listening ? 'Escuchando... Di un comando o pulsa para detener' : 'Comando por voz (Ctrl+Alt+M)');
   }
 
   // A button of the message on screen says something else now ("Copied").

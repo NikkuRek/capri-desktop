@@ -8,6 +8,7 @@
 import { pick, fmt } from './util.js';
 import { ASSISTANT_NAMES } from './lines.js';
 import { parseReminder, parseWhen, clock } from './reminders.js';
+import { VoiceRecognition } from './voice-recognition.js';
 
 const REMEMBER = 20; // messages she has in mind when answering
 const KEEP = 60;     // messages she remembers across restarts (memory.json)
@@ -27,10 +28,10 @@ const LOADING_AFTER_MS = 5000;
 const CLOSE_TAG = /\[\[\s*close\s*:?\s*([^\]]*)\]\]/i; // [[close: AM Music]] at the end of her answer
 // "close", "shut down", "ferme", "quitte", "cierra", "fecha", "закрой"... in any of her languages
 const CLOSE_ASK = /\b(close|shut|quit|kill|exit)|ferm|quitt|coupe|arr[êe]t|cierr|cerra|fech|закр|выключ/i;
-// her other tags: [[open: Spotify]], [[music: Bad Bunny]], [[media: next]], [[site: youtube.com]]
-const TAG = /\[\[\s*(open|music|media|site)\s*:\s*([^\]]*)\]\]/i;
+// her other tags: [[open: Spotify]], [[music: Bad Bunny]], [[media: next]], [[site: youtube.com]], [[run: htop]]
+const TAG = /\[\[\s*(open|music|media|site|run|cmd)\s*:\s*([^\]]*)\]\]/i;
 // "open", "launch", "ouvre", "lance", "abre", "открой"... in any of her languages
-const OPEN_ASK = /\b(open|launch|start|run)\b|ouvr|lance|démarre|abre|abrir|inicia|ejecuta|executa|открой|запусти/i;
+const OPEN_ASK = /\b(open|launch|start|run|exec)\b|ouvr|lance|démarre|abre|abrir|inicia|iniciar|ejecuta|ejecutar|corre|correr|executa|открой|запусти/i;
 // what to do with the music playing, said plainly (only when it's about music, or said in a few words)
 const MEDIA_ASK = [
   ['pause', /\b(pause|pausa|pausar)\b|stop (the )?music|arrête la musique|пауз/i],
@@ -251,6 +252,7 @@ export class Chat {
     this.jealousy = null;  // and how she takes your other AIs
     this.onMessage = null; // () => void: you said something to her
     this.waitingWhen = null; // a reminder you asked for without saying when: { text, until }
+    this.voiceRec = new VoiceRecognition(host);
     host.onChatDelta(({ id, text }) => this.onDelta(id, text));
   }
 
@@ -269,6 +271,14 @@ export class Chat {
       await capri.unstow();
     }
     capri.wake();
+    capri.setMode('idle');
+    if (this.brain?.sessions) {
+      for (const s of Object.values(this.brain.sessions)) {
+        s.waiting = false;
+      }
+    }
+    this.panel.current = null;
+    this.panel.leaving = false;
     const status = await host.chatStatus();
     if (!status.ok && this.onSetup) {
       this.onSetup(status); // nothing to talk with yet: she sets it up with you, with buttons (setup.js)
@@ -308,6 +318,9 @@ export class Chat {
     const hello = moody ? fmt(pick(moody), this.bond.mood.vars) : pick(this.history.length ? t.again : t.hello);
     this.opening = moody ? hello : null;
     host.focusOverlay(true); // the keyboard, for typing to her
+    this.panel.current = null;
+    this.panel.leaving = false;
+    if (this.capri.mode === 'alert') this.capri.setMode('idle');
     const shown = this.panel.say({
       kind: 'chat',
       face: moody ? MOOD_FACE[feeling] : 'look',
@@ -327,6 +340,7 @@ export class Chat {
         note: status.local ? t.note : t.noteCloud,
       },
       onSend: (text) => this.send(text),
+      onMic: () => this.toggleVoiceCommand(),
       onLeave: () => this.close(),
       hold: null,
     });
@@ -340,8 +354,65 @@ export class Chat {
     capri.nextMove = capri.nextGaze = performance.now() + STAY_MS;
   }
 
+  async toggleVoiceCommand() {
+    if (!this.open) {
+      await this.start();
+      await new Promise((r) => setTimeout(r, 200));
+    }
+
+    if (!this.voiceRec?.isSupported()) {
+      this.panel.say({
+        kind: 'info',
+        face: 'aside',
+        line: 'No se detectó soporte para micrófono en este entorno.',
+        hold: 4000,
+      });
+      return;
+    }
+
+    if (this.voiceRec.active) {
+      this.voiceRec.stop();
+      return;
+    }
+
+    const prevPlaceholder = this.panel.chatInput.placeholder || '';
+    this.panel.chatInput.placeholder = 'Escuchando... Di un comando';
+    this.voice?.play('tick');
+
+    await this.voiceRec.start({
+      lang: 'es-ES',
+      onStateChange: (listening) => {
+        this.panel.setMicListening(listening);
+        if (!listening) {
+          this.panel.chatInput.placeholder = prevPlaceholder;
+        }
+      },
+      onInterim: (text) => {
+        if (text) {
+          this.panel.chatInput.value = text;
+        }
+      },
+      onResult: (finalText) => {
+        if (!finalText || !finalText.trim()) return;
+        this.panel.chatInput.value = finalText.trim();
+        this.voice?.play('land');
+        setTimeout(() => {
+          if (this.open && !this.turn) {
+            this.send(finalText.trim());
+          }
+        }, 250);
+      },
+      onError: (err) => {
+        console.warn('[capri:chat] Error en reconocimiento de voz:', err);
+        this.panel.setMicListening(false);
+        this.panel.chatInput.placeholder = prevPlaceholder;
+      },
+    });
+  }
+
   close() {
     if (!this.open) return;
+    this.voiceRec?.cancel();
     this.open = false;
     if (this.turn) this.host.chatStop(this.turn);
     this.turn = 0;
@@ -472,7 +543,7 @@ export class Chat {
   }
 
   listApps() {
-    this.appsReady = this.host.openApps().then((list) => { this.apps = list || []; }).catch(() => {});
+    this.appsReady = this.host.openApps().then((list) => { this.apps = list || []; }).catch(() => { });
   }
 
   // What you asked plainly, read off your message (a small model doesn't always write its tag right):
@@ -759,12 +830,15 @@ export class Chat {
       if (!first?.line) return then;
       return { line: [first.line, then?.line].filter(Boolean).join('\n'), face: then?.face || first.face };
     }
-    const item = await this.host.findLaunch(asked.text);
+    const targetBrowser = detectBrowser(asked.text);
     const site = namedSite(asked.text);
-    if (site && (!item || BROWSER.test(item.name))) {
+    if (site) {
       this.zap();
-      return (await this.host.openSite(site.url)) ? { line: fmt(t.siteOpened, { site: site.name }), face: 'laugh' } : null;
+      const res = await this.host.openSite(site.url, targetBrowser);
+      const bLabel = targetBrowser === 'chrome' ? ' en Chrome' : targetBrowser === 'brave' ? ' en Brave' : '';
+      return res ? { line: fmt(t.siteOpened, { site: site.name + bLabel }), face: 'laugh' } : null;
     }
+    const item = await this.host.findLaunch(asked.text);
     if (!item) return null; // nothing by that name here: her tag may still say what you meant
     return this.openNow(item);
   }
@@ -846,11 +920,12 @@ export class Chat {
     if (kind === 'media') return MEDIA_ACTIONS.has(value.toLowerCase()) ? this.media(value.toLowerCase(), answer) : undefined;
     // a song she picked: on YouTube, the right video (on Spotify if that's what you said)
     if (kind === 'music') return /spotify/i.test(text) ? this.music(value, answer) : this.playOn(value, answer);
-    if (kind === 'site') return this.offerSite(value, answer);
+    const targetBrowser = detectBrowser(text);
+    if (kind === 'site') return this.offerSite(value, answer, targetBrowser);
     const item = await this.host.findLaunch(value);
     if (item) return this.launch(item, answer);
     const site = namedSite(value); // "[[open: YouTube]]": a site, not an app
-    return site ? this.offerSite(site.url, answer) : this.addLine(answer, fmt(t.notInstalled, { app: value }));
+    return site ? this.offerSite(site.url, answer, targetBrowser) : this.addLine(answer, fmt(t.notInstalled, { app: value }));
   }
 
   // her answer, with a line of what she did under it
@@ -903,7 +978,7 @@ export class Chat {
   }
 
   // A website: always behind a button that shows where it goes.
-  offerSite(address, answer) {
+  offerSite(address, answer, browser = null) {
     const { t } = this;
     let host;
     try {
@@ -912,13 +987,14 @@ export class Chat {
       return;
     }
     if (!this.open || this.turn || !host.includes('.')) return;
+    const bLabel = browser === 'chrome' ? ' (Chrome)' : browser === 'brave' ? ' (Brave)' : '';
     this.panel.setActions(
-      [{ id: 'site', label: fmt(t.siteIt, { site: host }), primary: true }, { id: 'no', label: t.no }],
+      [{ id: 'site', label: fmt(t.siteIt, { site: host + bLabel }), primary: true }, { id: 'no', label: t.no }],
       async (id) => {
         this.panel.setActions([]);
         if (id !== 'site') return;
-        const ok = await this.host.openSite(address);
-        if (ok) this.addLine(answer, fmt(t.siteOpened, { site: host }));
+        const ok = await this.host.openSite(address, browser);
+        if (ok) this.addLine(answer, fmt(t.siteOpened, { site: host + bLabel }));
       },
     );
   }
@@ -979,7 +1055,7 @@ export class Chat {
   // What she can do on the PC when you ask (Windows), and nothing else.
   powers() {
     const lines = [
-      'Only when the user asks you to open an app, a game, a file or folder on their desktop, or a folder like Downloads, to play music, to control the music playing, or to open a website: say in a few words that you will, and end your answer with one tag: [[open: NAME]], [[music: ARTIST - SONG]] (it plays on YouTube; if they did not say which song, pick one that fits), [[media: ACTION]] (ACTION: pause, play, next, previous, volup, voldown or mute), or [[site: ADDRESS]]. Some of these get a button to confirm, so never say it is already done. Any other time, write no tag at all: there are no other tags.',
+      'Only when the user asks you to open an app, a game, run a command in the terminal, a file or folder on their desktop, or a folder like Downloads, to play music, to control the music playing, or to open a website: say in a few words that you will, and end your answer with one tag: [[open: NAME]] (e.g. [[open: Chrome]], [[open: terminal]], or [[open: fastfetch]]), [[music: ARTIST - SONG]] (it plays on YouTube; if they did not say which song, pick one that fits), [[media: ACTION]] (ACTION: pause, play, next, previous, volup, voldown or mute), or [[site: ADDRESS]]. Some of these get a button to confirm, so never say it is already done. Any other time, write no tag at all: there are no other tags.',
     ];
     if (this.apps.length) {
       const open = this.apps.map(({ name, label }) => (label && label !== name ? `${name} (${label})` : name)).join(', ');
@@ -1093,8 +1169,34 @@ export function clean(text) {
     .trim();
 }
 
-// A site from SITES named in the text: { name, url }, or null.
+// Detect which browser was requested: 'chrome' or 'brave' (or null)
+function detectBrowser(text) {
+  if (/\b(?:en|con|usando|on|in|with)\s+chrome\b|\bgoogle\s+chrome\b|\bchrome\b/i.test(text)) return 'chrome';
+  if (/\b(?:en|con|usando|on|in|with)\s+brave\b|\bbrave\b/i.test(text)) return 'brave';
+  return null;
+}
+
+// A site from SITES or a URL/domain in the text: { name, url }, or null.
 function namedSite(text) {
+  // 1. Direct URL (http:// or https://)
+  const urlMatch = text.match(/https?:\/\/[^\s"'<>]+/i);
+  if (urlMatch) {
+    try {
+      const u = new URL(urlMatch[0]);
+      return { name: u.hostname.replace(/^www\./, ''), url: u.href };
+    } catch { }
+  }
+
+  // 2. Domain pattern (e.g. gemini.google.com, x.com, github.com, etc.)
+  const domainMatch = text.match(/\b([a-zA-Z0-9-]+\.(?:com|org|net|io|dev|app|gg|tv|es|me|ai|co|edu)(?:\/[^\s"'<>]*)?)\b/i);
+  if (domainMatch) {
+    try {
+      const u = new URL('https://' + domainMatch[1]);
+      return { name: u.hostname.replace(/^www\./, ''), url: u.href };
+    } catch { }
+  }
+
+  // 3. Known names from SITES
   const name = Object.keys(SITES).find((n) => new RegExp(`\\b${n}\\b`, 'i').test(text));
   return name ? { name: new URL(SITES[name]).hostname.replace(/^www\./, ''), url: SITES[name] } : null;
 }

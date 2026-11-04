@@ -191,11 +191,90 @@ async function chat({ messages, model: modelOverride }, onDelta, signal) {
   return fullText;
 }
 
+// Transcribe un fragmento de audio codificado en base64 usando la API multimodal de Gemini
+async function transcribeAudio({ base64, mimeType = 'audio/webm' }) {
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    throw new Error('Falta configurar GEMINI_API_KEY en .env');
+  }
+
+  const model = getModel();
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+  const cleanMime = mimeType.split(';')[0].trim() || 'audio/webm';
+  const prompt = 'Eres un transcriptor de comandos por voz para un asistente de escritorio en Linux. Transcribe fielmente lo que dice la persona en español. Devuelve EXCLUSIVAMENTE el texto hablado, sin comillas, sin introducciones ni explicaciones. Si solo hay silencio, ruido o no hay habla distinguible, devuelve exactamente nada (cadena vacía).';
+
+  let res = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{
+        parts: [
+          { text: prompt },
+          {
+            inlineData: {
+              mimeType: cleanMime,
+              data: base64,
+            },
+          },
+        ],
+      }],
+      generationConfig: {
+        temperature: 0.1,
+        maxOutputTokens: 256,
+        thinkingConfig: {
+          thinkingBudget: 0,
+        },
+      },
+    }),
+  });
+
+  if (res.status === 400) {
+    const errorBody = await res.clone().text().catch(() => '');
+    if (errorBody.includes('thinkingConfig') || errorBody.includes('thinkingBudget')) {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { text: prompt },
+              {
+                inlineData: {
+                  mimeType: cleanMime,
+                  data: base64,
+                },
+              },
+            ],
+          }],
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 256,
+          },
+        }),
+      });
+    }
+  }
+
+  if (!res.ok) throw await failure(res);
+
+  const data = await res.json();
+  const candidate = data.candidates?.[0];
+  const parts = candidate?.content?.parts || [];
+  let transcript = '';
+  for (const part of parts) {
+    if (part.text) transcript += part.text;
+  }
+  return transcript.trim();
+}
+
 module.exports = {
   getApiKey,
   getModel,
   checkStatus,
   chat,
+  transcribeAudio,
 };
+
 
 

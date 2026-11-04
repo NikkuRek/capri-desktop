@@ -5,7 +5,7 @@ const os = require('node:os');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const {
-  app, BrowserWindow, Tray, Menu, ipcMain, screen, protocol, net, shell, globalShortcut, nativeImage,
+  app, BrowserWindow, Tray, Menu, ipcMain, screen, protocol, net, shell, globalShortcut, nativeImage, session,
 } = require('electron');
 
 app.commandLine.appendSwitch('remote-debugging-port', '9222');
@@ -24,6 +24,7 @@ applyRender();
 const { TRAY, LANGS } = require('./labels');
 const { startWindowWatch } = require('./windows');
 const commands = require('./commands');
+const launcher = require('./launcher');
 const { loadEnv } = require('./env');
 const ai = require('./ai');
 const apps = require('./apps');
@@ -70,7 +71,7 @@ async function snapScreen() {
     const b64 = execSync('grim -t jpeg - | base64', { timeout: 3500, maxBuffer: 12 * 1024 * 1024 })
       .toString('utf8').replace(/\s+/g, '');
     if (b64) return b64;
-  } catch {}
+  } catch { }
   const { desktopCapturer } = require('electron');
   const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1280, height: 720 } });
   const src = sources[0];
@@ -437,7 +438,7 @@ function rebuildTray() {
       const { spawnSync } = require('node:child_process');
       const raw = spawnSync('niri', ['msg', '--json', 'outputs'], { encoding: 'utf8', timeout: 500 }).stdout;
       if (raw) niriOutputs = JSON.parse(raw);
-    } catch {}
+    } catch { }
   }
 
   const menuItems = [
@@ -461,6 +462,8 @@ function rebuildTray() {
   if (isFull) {
     menuItems.push(
       { label: t.chat || 'Hablar con Capri', click: () => sendCommand('chat') },
+      { label: 'Reconocimiento por voz (Ctrl+Alt+M)', click: () => sendCommand('voice') },
+      { label: '🎙️ Reconocimiento por voz (Ctrl+Alt+M)', click: () => sendCommand('voice') },
       { label: 'Escanear pantalla', click: () => sendCommand('look') },
       {
         label: t.provider || 'Proveedor de IA',
@@ -737,6 +740,14 @@ function registerIpc() {
   });
   ipcMain.handle('chat:memory', () => readMemory().history || []);
   ipcMain.on('chat:remember', (_e, history) => Array.isArray(history) && saveMemory({ history }));
+  ipcMain.handle('audio:transcribe', async (_e, { base64, mimeType }) => {
+    try {
+      const text = await ai.transcribeAudio({ base64, mimeType });
+      return { ok: true, text };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
   ipcMain.handle('look:snap', async () => {
     try {
       const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -784,6 +795,22 @@ function registerIpc() {
   ipcMain.handle('apps:list', () => apps.list());
   ipcMain.handle('apps:find', (_e, wanted) => apps.find(wanted));
   ipcMain.handle('apps:close', (_e, { name, force }) => apps.close(name, { force }));
+  ipcMain.handle('apps:findLaunch', async (_e, text) => launcher.find(String(text || '')));
+  ipcMain.handle('apps:launch', async (_e, item) => launcher.launch(item));
+  ipcMain.handle('apps:site', async (_e, req) => {
+    const url = typeof req === 'string' ? req : req?.url;
+    const browser = typeof req === 'object' ? req.browser : null;
+    return launcher.openUrl(url, browser);
+  });
+  ipcMain.handle('files:open', async (_e, { file, reveal }) => {
+    try {
+      if (reveal) shell.showItemInFolder(file);
+      else await shell.openPath(file);
+      return true;
+    } catch {
+      return false;
+    }
+  });
 }
 
 function main() {
@@ -804,6 +831,15 @@ function main() {
   app.setName('capri-desktop');
 
   app.whenReady().then(() => {
+    session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
+      if (permission === 'media') return true;
+      return false;
+    });
+    session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+      if (permission === 'media') return callback(true);
+      callback(false);
+    });
+
     serveProtocol();
     registerIpc();
     createOverlay();
@@ -835,6 +871,7 @@ function main() {
 
     globalShortcut.register('Control+Alt+C', () => toggleVisible());
     globalShortcut.register('Control+Alt+V', () => toggleCompact());
+    globalShortcut.register('Control+Alt+M', () => sendCommand('voice'));
     globalShortcut.register('Control+Alt+S', () => sendCommand('satellite'));
     globalShortcut.register('Control+Alt+P', () => sendCommand('possess'));
     globalShortcut.register('Control+Alt+T', () => sendCommand('teleport'));

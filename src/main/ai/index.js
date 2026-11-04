@@ -60,10 +60,18 @@ function warmOllama() {
   }).catch(() => {});
 }
 
+async function transcribeAudio({ base64, mimeType }) {
+  if (gemini.getApiKey()) {
+    return gemini.transcribeAudio({ base64, mimeType });
+  }
+  throw new Error('La transcripción de audio por IA requiere GEMINI_API_KEY configurada en .env');
+}
+
 module.exports = {
   resolveProvider,
   status,
   chat,
+  transcribeAudio,
   warmOllama,
   gemini,
   ollama,

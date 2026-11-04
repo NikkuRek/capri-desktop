@@ -770,6 +770,10 @@ async function boot() {
       case 'chat':
         chat.start();
         break;
+      case 'voice':
+      case 'mic':
+        chat.toggleVoiceCommand();
+        break;
       case 'satellite':
         if (capri.stowed) {
           host.setConfig({ visible: true });
