@@ -8,22 +8,14 @@ const {
   app, BrowserWindow, Tray, Menu, ipcMain, screen, protocol, net, shell, globalShortcut, nativeImage,
 } = require('electron');
 
-// Optimizaciones de GPU, aceleración por hardware y transparencias en Linux
-if (process.platform === 'linux') {
-  app.commandLine.appendSwitch('enable-transparent-visuals');
-  app.commandLine.appendSwitch('enable-gpu-rasterization');
-  app.commandLine.appendSwitch('enable-zero-copy');
-  app.commandLine.appendSwitch('ignore-gpu-blocklist');
-}
+app.commandLine.appendSwitch('remote-debugging-port', '9222');
 
 const config = require('./config');
 
 function applyRender() {
   const { render } = config.load();
-  if (render === 'gl') {
-    app.commandLine.appendSwitch('use-angle', 'gl');
-    app.commandLine.appendSwitch('use-gl', 'desktop');
-  } else if (render === 'software') {
+  if (render === 'gl') app.commandLine.appendSwitch('use-angle', 'gl');
+  if (render === 'software') {
     app.disableHardwareAcceleration();
     app.commandLine.appendSwitch('enable-unsafe-swiftshader');
   }
@@ -52,7 +44,6 @@ let tray = null;
 let trayMenu = null;
 let windowWatch = null;
 let lastWindows = null;
-let currentHitRects = [];
 let bridgeServer = null;
 
 const userSoundsDir = () => path.join(app.getPath('userData'), 'sounds');
@@ -148,6 +139,28 @@ function serveProtocol() {
   });
 }
 
+function displays() {
+  const real = screen.getAllDisplays();
+  if (!DEV || process.env.CAPRI_SCREENS !== '2' || real.length > 1) return real;
+  const d = screen.getPrimaryDisplay();
+  const half = (r, i) => ({ x: r.x + Math.floor(r.width / 2) * i, y: r.y, width: Math.floor(r.width / 2), height: r.height });
+  return [0, 1].map((i) => ({ ...d, id: d.id * 10 + i + 1, bounds: half(d.bounds, i), workArea: half(d.workArea, i), size: { width: Math.floor(d.size.width / 2), height: d.size.height } }));
+}
+
+function displayAt(p) {
+  const all = displays();
+  const inside = all.find(({ bounds: b }) => p.x >= b.x && p.y >= b.y && p.x < b.x + b.width && p.y < b.y + b.height);
+  if (inside) return inside;
+  const near = screen.getDisplayNearestPoint(p);
+  return all.find((d) => d.id === near.id) || all[0];
+}
+
+function targetDisplay() {
+  const { displayId } = config.load();
+  const all = displays();
+  return all.find((d) => d.id === displayId) || all.find((d) => d.id === screen.getPrimaryDisplay().id) || all[0];
+}
+
 let isOverlayExpanded = false;
 
 function compactDimensions(scale = 0.6, expanded = false) {
@@ -157,19 +170,15 @@ function compactDimensions(scale = 0.6, expanded = false) {
     const h = Math.round(Math.max(440, 340 + 180 * s));
     return { width: w, height: h };
   }
-  // Dimensiones que cubren la silueta completa de Capri (352x532 con padding) sin recortar cabeza ni extremidades
+  // Dimensiones que cubren la silueta completa de Capri (352x532 con padding) sin recortar
   const w = Math.round(352 * s + 24);
   const h = Math.round(532 * s + 24);
   return { width: w, height: h };
 }
 
-function targetDisplay() {
-  const { displayId } = config.load();
-  return screen.getAllDisplays().find((d) => d.id === displayId) || screen.getPrimaryDisplay();
-}
-
 function targetBounds() {
-  const { workArea } = targetDisplay();
+  const td = targetDisplay();
+  const { workArea, bounds } = td;
   const cfg = config.load();
 
   if (!cfg.visible) {
@@ -181,6 +190,7 @@ function targetBounds() {
       y: workArea.y + workArea.height - h - 16,
       width: w,
       height: h,
+      gap: 0,
     };
   }
 
@@ -193,9 +203,18 @@ function targetBounds() {
       y: workArea.y + workArea.height - h - 16,
       width: w,
       height: h,
+      gap: 0,
     };
   }
-  return workArea;
+
+  const area = cfg.rest === 'taskbar' ? { ...bounds, y: bounds.y + 1, height: bounds.height - 1 } : workArea;
+  const gap = area.y + area.height - (workArea.y + workArea.height);
+  return { ...area, gap };
+}
+
+function overlayArea() {
+  const b = targetBounds();
+  return { area: { x: b.x, y: b.y, width: b.width, height: b.height }, gap: b.gap || 0 };
 }
 
 function findNiriOutputForDisplay(display, outputs) {
@@ -252,27 +271,45 @@ function syncNiriWindowPosition(targetX, targetY, targetDisplay) {
 
 function fitOverlay() {
   if (!overlay) return;
-  const b = targetBounds();
-  const d = targetDisplay();
-  overlay.setBounds(b);
-  overlay.webContents.send('overlay:resize', { width: b.width, height: b.height });
-  setTimeout(() => syncNiriWindowPosition(b.x, b.y, d), 50);
+  const { area, gap } = overlayArea();
+  overlay.setBounds(area);
+  overlay.webContents.send('overlay:resize', { width: area.width, height: area.height, gap });
+  if (process.platform === 'linux') {
+    syncNiriWindowPosition(area.x, area.y, targetDisplay());
+  }
+}
+
+function moveOverlay(id) {
+  if (!displays().some((d) => d.id === id)) return null;
+  config.save({ displayId: id });
+  fitOverlay();
+  const { area } = overlayArea();
+  overlay.setBounds(area);
+  if (process.platform === 'linux') {
+    syncNiriWindowPosition(area.x, area.y, targetDisplay());
+  }
+  windowWatch?.refresh();
+  rebuildTray();
+  sendCommand('screens');
+  return area;
 }
 
 function rearmOverlay() {
   if (!overlay || overlay.isDestroyed()) return;
-  overlay.setIgnoreMouseEvents(false);
-  overlay.setIgnoreMouseEvents(true, { forward: true });
+  if (process.platform !== 'linux') {
+    overlay.setIgnoreMouseEvents(false);
+    overlay.setIgnoreMouseEvents(true, { forward: true });
+  }
   overlay.setAlwaysOnTop(true, 'screen-saver');
   fitOverlay();
   sendCommand('rearmed');
 }
 
 function createOverlay() {
-  const bounds = targetBounds();
+  const { area } = overlayArea();
   overlay = new BrowserWindow({
     title: 'Capri',
-    ...bounds,
+    ...area,
     transparent: true,
     backgroundColor: '#00000000',
     frame: false,
@@ -287,6 +324,7 @@ function createOverlay() {
     focusable: false,
     hasShadow: false,
     alwaysOnTop: true,
+    type: process.platform === 'win32' ? 'toolbar' : undefined,
     show: false,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload.js'),
@@ -299,16 +337,14 @@ function createOverlay() {
   });
 
   overlay.setAlwaysOnTop(true, 'screen-saver');
+  if (process.platform !== 'linux') {
+    overlay.setIgnoreMouseEvents(true, { forward: true });
+  }
 
   overlay.loadURL('capri://app/src/renderer/index.html');
   overlay.once('ready-to-show', () => {
+    fitOverlay();
     overlay.showInactive();
-    const b = targetBounds();
-    const d = targetDisplay();
-    setTimeout(() => syncNiriWindowPosition(b.x, b.y, d), 100);
-    if (process.platform === 'linux' && typeof overlay?.setShape === 'function') {
-      overlay.setShape([{ x: 0, y: 0, width: 1, height: 1 }]);
-    }
   });
   overlay.webContents.on('render-process-gone', (_e, details) => {
     console.error('[capri] renderer gone:', details.reason);
@@ -390,7 +426,7 @@ function rebuildTray() {
   const cfg = config.load();
   const t = TRAY[resolveLang(cfg.lang)] || TRAY.es;
 
-  const displays = screen.getAllDisplays();
+  const screenList = displays();
   const current = targetDisplay().id;
 
   const isFull = cfg.mode !== 'only-view';
@@ -464,6 +500,7 @@ function rebuildTray() {
     { label: cfg.visible ? t.hide : t.show, accelerator: 'Ctrl+Alt+C', click: () => toggleVisible() },
     {
       label: t.compact,
+      accelerator: 'Ctrl+Alt+V',
       type: 'checkbox',
       checked: Boolean(cfg.compact),
       click: (item) => toggleCompact(item.checked),
@@ -515,8 +552,8 @@ function rebuildTray() {
     },
     {
       label: t.screen,
-      enabled: displays.length > 1,
-      submenu: displays.map((d, i) => {
+      enabled: screenList.length > 1,
+      submenu: screenList.map((d, i) => {
         const match = Object.entries(niriOutputs).find(([_, out]) =>
           Math.abs(out.logical.x - d.bounds.x) < 5 && Math.abs(out.logical.y - d.bounds.y) < 5
         );
@@ -526,9 +563,7 @@ function rebuildTray() {
           type: 'radio',
           checked: d.id === current,
           click: () => {
-            config.save({ displayId: d.id });
-            fitOverlay();
-            rebuildTray();
+            moveOverlay(d.id);
           },
         };
       }),
@@ -603,50 +638,61 @@ function createTray() {
 }
 
 function registerIpc() {
-  ipcMain.on('overlay:set-shape', (_e, rects) => {
-    if (!overlay || overlay.isDestroyed()) return;
-    const b = overlay.getBounds();
-    const valid = [];
-    if (Array.isArray(rects)) {
-      for (const r of rects) {
-        if (!r || typeof r.width !== 'number' || typeof r.height !== 'number') continue;
-        const x1 = Math.max(0, Math.floor(r.x));
-        const y1 = Math.max(0, Math.floor(r.y));
-        const x2 = Math.min(b.width, Math.ceil(r.x + r.width));
-        const y2 = Math.min(b.height, Math.ceil(r.y + r.height));
-        if (x2 > x1 && y2 > y1) {
-          valid.push({ x: x1, y: y1, width: x2 - x1, height: y2 - y1 });
-        }
-      }
-    }
-    const newRects = valid.length > 0 ? valid : [{ x: 0, y: 0, width: 1, height: 1 }];
-    const isSame = currentHitRects.length === newRects.length &&
-      currentHitRects.every((r, i) => r.x === newRects[i].x && r.y === newRects[i].y && r.width === newRects[i].width && r.height === newRects[i].height);
-    if (isSame) return;
-    currentHitRects = newRects;
-    if (process.platform === 'linux' && typeof overlay?.setShape === 'function') {
-      try {
-        overlay.setShape(currentHitRects);
-      } catch (err) {
-        // En Wayland nativo setShape no es necesario o es no-op
-      }
+  ipcMain.on('overlay:interactive', (_e, on) => {
+    if (process.platform !== 'linux') {
+      overlay?.setIgnoreMouseEvents(!on, { forward: true });
     }
   });
-
   ipcMain.on('overlay:expanded', (_e, on) => {
     if (isOverlayExpanded !== Boolean(on)) {
       isOverlayExpanded = Boolean(on);
       fitOverlay();
     }
   });
-
+  ipcMain.on('overlay:set-shape', (_e, rects) => {
+    if (!overlay || overlay.isDestroyed()) return;
+    const cfg = config.load();
+    if (cfg.compact || !cfg.visible) return;
+    if (process.platform === 'linux' && typeof overlay.setShape === 'function') {
+      try {
+        if (!Array.isArray(rects) || !rects.length) return;
+        overlay.setShape(rects);
+      } catch (err) {
+        console.error('[capri] setShape error:', err);
+      }
+    }
+  });
+  ipcMain.on('overlay:rearm', () => rearmOverlay());
   ipcMain.handle('overlay:cursor', () => {
     const p = screen.getCursorScreenPoint();
-    const b = overlay.getBounds();
-    return { x: p.x - b.x, y: p.y - b.y, inside: p.x >= b.x && p.y >= b.y && p.x < b.x + b.width && p.y < b.y + b.height };
+    const b = overlay?.getBounds() || { x: 0, y: 0, width: 0, height: 0 };
+    const inside = p.x >= b.x && p.y >= b.y && p.x < b.x + b.width && p.y < b.y + b.height;
+    return { x: p.x - b.x, y: p.y - b.y, inside, display: displayAt(p).id };
+  });
+  ipcMain.handle('screens:list', () => {
+    const o = overlay?.getBounds() || { x: 0, y: 0 };
+    return {
+      current: targetDisplay().id,
+      origin: { x: o.x, y: o.y },
+      list: displays().map(({ id, bounds: b }) => ({ id, x: b.x, y: b.y, w: b.width, h: b.height })),
+    };
+  });
+  ipcMain.handle('screens:move', async (_e, id) => {
+    const area = moveOverlay(id);
+    if (!area) return null;
+    await new Promise((r) => setTimeout(r, 60));
+    overlay?.setBounds(area);
+    const o = overlay?.getBounds() || area;
+    return { origin: { x: o.x, y: o.y }, width: o.width, height: o.height, gap: overlayArea().gap };
   });
 
   ipcMain.handle('config:get', () => rendererConfig());
+  ipcMain.handle('hooks:status', () => ({ installed: true, file: '' }));
+  ipcMain.handle('hooks:install', () => ({ action: 'install', ok: true }));
+  ipcMain.handle('claude:found', () => false);
+  ipcMain.on('claude:help', () => shell.openExternal('https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview'));
+  ipcMain.handle('guide:tray', () => ({ icon: null, corner: null }));
+  ipcMain.handle('guide:claudeFolder', () => ({ found: false, dir: '' }));
   ipcMain.handle('config:set', (_e, patch) => updateConfig(patch));
   ipcMain.handle('window:toggle-compact', () => toggleCompact());
   ipcMain.handle('window:toggle-visible', () => toggleVisible());
@@ -720,16 +766,7 @@ function registerIpc() {
       }
     }
   });
-  ipcMain.on('overlay:rearm', () => rearmOverlay());
   ipcMain.handle('windows:closePage', (_e, { id, key }) => windowWatch?.close?.(id, key) ?? 'gone');
-  ipcMain.handle('screens:list', () => {
-    const o = overlay?.getBounds() || { x: 0, y: 0 };
-    return {
-      current: targetDisplay().id,
-      origin: { x: o.x, y: o.y },
-      list: screen.getAllDisplays().map(({ id, bounds: b }) => ({ id, x: b.x, y: b.y, w: b.width, h: b.height })),
-    };
-  });
   let cpuBefore = null;
   ipcMain.handle('pc:cpu', () => {
     const now = os.cpus().map(({ times: t }) => ({ idle: t.idle, total: t.user + t.nice + t.sys + t.idle + t.irq }));
@@ -780,23 +817,37 @@ function main() {
       },
     });
 
+    bridgeServer = createBridge({
+      onEvent: (event) => {
+        overlay?.webContents.send('ide:event', event);
+      },
+      onCommand: (cmd) => {
+        const name = cmd.name || cmd.command;
+        if (name === 'visible' || name === 'toggle-visible') toggleVisible();
+        else if (name === 'compact' || name === 'toggle-compact') toggleCompact();
+        else if (name) sendCommand(name, cmd.payload || cmd);
+      },
+    });
+
     if (config.load().mode !== 'only-view') {
-      bridgeServer = createBridge({
-        onEvent: (event) => {
-          overlay?.webContents.send('ide:event', event);
-        },
-      });
       ai.warmOllama();
     }
 
     globalShortcut.register('Control+Alt+C', () => toggleVisible());
+    globalShortcut.register('Control+Alt+V', () => toggleCompact());
     globalShortcut.register('Control+Alt+S', () => sendCommand('satellite'));
     globalShortcut.register('Control+Alt+P', () => sendCommand('possess'));
     globalShortcut.register('Control+Alt+T', () => sendCommand('teleport'));
 
-    screen.on('display-metrics-changed', fitOverlay);
-    screen.on('display-added', () => { fitOverlay(); rebuildTray(); });
-    screen.on('display-removed', () => { fitOverlay(); rebuildTray(); });
+    const screensChanged = () => {
+      fitOverlay();
+      windowWatch?.refresh();
+      rebuildTray();
+      sendCommand('screens');
+    };
+    screen.on('display-metrics-changed', screensChanged);
+    screen.on('display-added', screensChanged);
+    screen.on('display-removed', screensChanged);
   });
 
   app.on('will-quit', () => {

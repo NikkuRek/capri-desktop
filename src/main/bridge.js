@@ -41,7 +41,7 @@ function readJson(req) {
   });
 }
 
-function createBridge({ port = DEFAULT_PORT, onEvent } = {}) {
+function createBridge({ port = DEFAULT_PORT, onEvent, onCommand } = {}) {
   const server = http.createServer(async (req, res) => {
     // Rechazar peticiones externas con Origin de navegadores web
     if (req.headers.origin) return send(res, 403, { ok: false });
@@ -50,6 +50,18 @@ function createBridge({ port = DEFAULT_PORT, onEvent } = {}) {
 
     if (req.method === 'GET' && url.pathname === '/health') {
       return send(res, 200, { ok: true, name: 'capri', ide: 'antigravity', pid: process.pid });
+    }
+
+    if (req.method === 'POST' && url.pathname === '/command') {
+      try {
+        const body = await readJson(req);
+        if (typeof onCommand === 'function') {
+          onCommand(body || {});
+        }
+        return send(res, 200, { ok: true });
+      } catch (err) {
+        return send(res, 400, { ok: false, error: err.message });
+      }
     }
 
     if (req.method === 'POST' && url.pathname === '/event') {

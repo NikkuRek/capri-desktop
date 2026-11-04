@@ -111,8 +111,15 @@ async function boot() {
     }
     return shown;
   };
+  const origPanelHide = panel.hide.bind(panel);
+  panel.hide = () => {
+    origPanelHide();
+    if (!chat.open && config.compact) {
+      host.setExpanded?.(false);
+    }
+  };
   panel.onDismiss = () => {
-    if (config.compact) {
+    if (!chat.open && config.compact) {
       host.setExpanded?.(false);
     }
   };
@@ -126,26 +133,44 @@ async function boot() {
     host.setInteractive(on);
   };
   const onChip = () => Boolean(chip.visible && mouse && chip.contains(mouse.x, mouse.y, 0));
-  const updateHitRects = () => {
-    if (capri.dragging) return;
-    const rects = [];
-    const cr = capri.rect();
-    if (cr) rects.push(cr);
-    const chr = chip.rect();
-    if (chr) rects.push(chr);
-    const mr = mask.rect();
-    if (mr) rects.push(mr);
-    const pr = panel.rect();
-    if (pr) rects.push({ x: Math.round(pr.left), y: Math.round(pr.top), width: Math.round(pr.width), height: Math.round(pr.height) });
-    host.setHitRects?.(rects);
-  };
-  const refreshHit = () => {
-    if (capri.dragging) return setInteractive(true);
-    if (!mouse) return setInteractive(false);
+  const isHit = (x, y) => {
+    if (typeof x !== 'number' || typeof y !== 'number') return false;
+    if (capri.dragging) return true;
     const r = panel.rect();
-    const onPanel = r && mouse.x >= r.left && mouse.x <= r.right && mouse.y >= r.top && mouse.y <= r.bottom;
+    if (r && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return true;
+    if (chip.visible && chip.contains(x, y, 0)) return true;
+    if (mask.visible && mask.contains(x, y, 0)) return true;
+    return Boolean(capri.hit(x, y));
+  };
+  const refreshHit = (x = mouse?.x, y = mouse?.y) => {
+    if (capri.dragging) return setInteractive(true);
+    if (x == null || y == null) return setInteractive(false);
     document.body.style.cursor = onChip() ? 'pointer' : '';
-    return setInteractive(Boolean(onPanel || capri.hit(mouse.x, mouse.y) || onChip()));
+    return setInteractive(isHit(x, y));
+  };
+  const updateInputShape = () => {
+    if (capri.dragging) {
+      host.setShape?.([{ x: 0, y: 0, width: innerWidth, height: innerHeight }]);
+      return;
+    }
+    const rects = [];
+    if (!capri.stowed && !capri.hidden) {
+      const cr = capri.rect();
+      if (cr) rects.push(cr);
+    }
+    if (panel.visible) {
+      const pr = panel.rect();
+      if (pr) rects.push({ x: Math.round(pr.left), y: Math.round(pr.top), width: Math.round(pr.width), height: Math.round(pr.height) });
+    }
+    if (chip.visible) {
+      const chr = chip.rect();
+      if (chr) rects.push(chr);
+    }
+    if (mask.visible) {
+      const mr = mask.rect();
+      if (mr) rects.push(mr);
+    }
+    host.setShape?.(rects);
   };
   // Her biochip: her eyes on it follow the pointer over it, and she comes out when you click it
   // (only then, so the pointer passing through that corner doesn't call her back).
@@ -176,40 +201,65 @@ async function boot() {
     if (now - lastMove > AWAY_MS) onBack?.(now - lastMove);
     lastMove = now;
     mouse = { x: e.clientX, y: e.clientY };
-    refreshHit();
+    refreshHit(e.clientX, e.clientY);
     hoverChip();
-    updateHitRects();
   });
   document.addEventListener('mouseleave', () => {
     mouse = null;
     refreshHit();
     hoverChip();
-    updateHitRects();
   });
-  // Where the pointer really is, every couple of seconds: if it moved over her window and no
-  // mousemove came, the hook that brings it to her is gone (Windows drops it without a word, after
-  // sleep say), and main.js puts in a new one.
+
   let seen = null;
   let rearmedAt = -Infinity;
   let follow = null; // (pointer) => she may follow it to another screen (below)
+  let checkingCursor = false;
+
   setInterval(async () => {
-    const at = await host.cursor().catch(() => null);
-    const before = seen;
-    seen = at;
-    follow?.(at);
-    if (!at?.inside) return;
-    const now = performance.now();
-    // the pointer is on her and she isn't clickable (its moves stopped reaching her): she is now
-    if (!interactive && now - lastMove > WATCH_MS) {
-      mouse = { x: at.x, y: at.y };
-      refreshHit();
-      updateHitRects();
+    if (checkingCursor) return;
+    checkingCursor = true;
+    try {
+      const at = await host.cursor().catch(() => null);
+      if (!at) return;
+      const before = seen;
+      seen = at;
+      follow?.(at);
+
+      if (!at.inside) {
+        if (mouse) {
+          mouse = null;
+          refreshHit();
+          hoverChip();
+        }
+        return;
+      }
+
+      const hit = isHit(at.x, at.y);
+      if (hit) {
+        mouse = { x: at.x, y: at.y };
+        setInteractive(true);
+        hoverChip();
+        if (!capri.dragging) {
+          capri.notice?.(at.x, at.y);
+          capri.stroke?.(at.x, at.y);
+        }
+      } else if (!capri.dragging && interactive) {
+        mouse = { x: at.x, y: at.y };
+        setInteractive(false);
+        hoverChip();
+      }
+
+      const now = performance.now();
+      if (before?.inside && !(at.x === before.x && at.y === before.y)) {
+        if (now - lastMove >= WATCH_MS * 1.5 && now - rearmedAt >= 20000) {
+          rearmedAt = now;
+          host.rearm();
+        }
+      }
+    } finally {
+      checkingCursor = false;
     }
-    if (!before?.inside || (at.x === before.x && at.y === before.y)) return;
-    if (now - lastMove < WATCH_MS * 1.5 || now - rearmedAt < 20000) return;
-    rearmedAt = now;
-    host.rearm();
-  }, WATCH_MS);
+  }, 25);
   window.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     host.openMenu();
@@ -224,25 +274,23 @@ async function boot() {
     panel.setAnchor({ ...head, lean: capri.pointing ? -capri.pointing.dir : 0 }, capri.view);
     // she may have moved out from under a still pointer: never leave a dead click zone behind
     refreshHit();
-    updateHitRects();
+    updateInputShape();
   };
   capri.onTeleport = (phase) => {
     if (phase === 'start') panel.suspend();
     else panel.resume();
-    updateHitRects();
+    updateInputShape();
   };
   capri.chipAt = () => chip.center();
   capri.onStow = () => {
     chip.setMode(capri.mode);
     chip.show();
-    updateHitRects();
+    updateInputShape();
   };
   capri.onUnstow = () => {
     chip.hide();
-    updateHitRects();
+    updateInputShape();
   };
-  updateHitRects();
-  setInterval(updateHitRects, 200);
   capri.onDoze = (phase, face) => {
     if (phase === 'start') {
       mask.place(face.x, face.y, capri.scale * 1.1);
@@ -252,7 +300,10 @@ async function boot() {
     } else {
       mask.hide();
     }
+    updateInputShape();
   };
+  updateInputShape();
+  setInterval(updateInputShape, 120);
   capri.onMode = (mode, prev) => chip.setMode(mode, prev);
   // now and then she says something about the satellite: while she looks at it, or once
   // the red light has gone up (never during, nothing should cover that)
@@ -591,12 +642,19 @@ async function boot() {
   const applySize = ({ width, height, gap = 0 }) => {
     floorGap = gap;
     fx.resize(width, height);
-    chip.place(width, height - gap);
+    chip.place(width, height - gap, { center: Boolean(config.compact) });
     capri.setView(width, height, height - gap);
+    if (config.compact) {
+      const s = capri.scale;
+      capri.pos.x = Math.round((SPRITE.pad + SPRITE.feet.x) * s + 12);
+      capri.pos.y = Math.round((SPRITE.pad + SPRITE.feet.y) * s + 12);
+      capri.place();
+    }
     if (window.devicePixelRatio !== dpr) {
       dpr = window.devicePixelRatio;
       capri.setScale(capri.scale); // her drawing redone at the new screen's pixels
     }
+    updateInputShape();
   };
   host.onResize(applySize);
 
@@ -659,12 +717,14 @@ async function boot() {
     goToScreen(at.display);
   };
   window.addEventListener('resize', () => {
-    fx.resize(innerWidth, innerHeight);
-    chip.place(innerWidth, innerHeight - floorGap);
-    capri.setView(innerWidth, innerHeight, innerHeight - floorGap);
+    applySize({ width: innerWidth, height: innerHeight, gap: floorGap });
   });
 
   host.onConfig((cfg) => {
+    const wasCompact = config.compact;
+    const wasScale = config.scale;
+    const wasVisible = config.visible;
+    config = { ...config, ...cfg };
     voice.configure(cfg);
     jealousy.enabled = cfg.jealous !== false;
     jealousy.closePages = cfg.closePages !== false;
@@ -673,8 +733,8 @@ async function boot() {
     pc.enabled = cfg.pcReact !== false;
     wantsOut = cfg.visible !== false;
     reminders.sync(cfg.reminders); // one may have been cancelled from her menu
-    capri.wander = cfg.wander;
-    capri.possessWindows = cfg.possess;
+    capri.wander = cfg.compact ? false : cfg.wander;
+    capri.possessWindows = cfg.compact ? false : cfg.possess;
     capri.restOn = cfg.rest || 'corner';
     applyMotion(cfg.motion);
     applyTheme(cfg.theme);
@@ -698,6 +758,9 @@ async function boot() {
       brain.lang = cfg.lang;
       panel.labels = linesFor(cfg.lang, cfg.assistant);
       document.documentElement.lang = cfg.lang;
+    }
+    if (cfg.compact !== wasCompact || cfg.scale !== wasScale || cfg.visible !== wasVisible) {
+      applySize({ width: innerWidth, height: innerHeight, gap: floorGap });
     }
   });
 
@@ -911,8 +974,11 @@ async function boot() {
 
   // entrance: her face big in the corner says hi, then she dives down to her spot
   // (put away last time: she starts in her biochip)
+  if (config.compact) {
+    applySize({ width: innerWidth, height: innerHeight, gap: floorGap });
+  }
   if (config.visible === false) capri.stowNow();
-  else if (intro) await capri.intro(capri.spot('post'));
+  else if (intro && !config.compact) await capri.intro(capri.spot('post'));
   else await capri.materialize(capri.spot('post'));
   // Windows has its animations off and she's following it: she barely moves. The first time, she
   // says so and asks whether to move anyway (her menu › Animations changes it later).

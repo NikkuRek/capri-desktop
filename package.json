@@ -7,10 +7,8 @@
   "main": "src/main/main.js",
   "private": true,
   "scripts": {
-    "start": "electron --ozone-platform=x11 .",
-    "start:wayland": "electron --ozone-platform-hint=auto --enable-features=WaylandWindowDecorations .",
-    "dev": "electron --ozone-platform=x11 . --dev",
-    "dev:wayland": "electron --ozone-platform-hint=auto --enable-features=WaylandWindowDecorations . --dev",
+    "start": "electron .",
+    "dev": "electron . --dev",
     "dist": "electron-builder --linux",
     "dist:linux": "electron-builder --linux",
     "hooks:agy:install": "node scripts/install-hooks-agy.js",

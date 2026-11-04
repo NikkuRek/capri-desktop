@@ -1863,7 +1863,7 @@ export class Capri {
       e.preventDefault();
       if (this.hit(e.clientX, e.clientY)) this.onMenu?.(); // right-click: her menu
     });
-    this.canvas.addEventListener('mousedown', (e) => {
+    const onDown = (e) => {
       if (e.button !== 0 || !this.hit(e.clientX, e.clientY)) return;
       // thrown: you can catch her on the fly, or pick her up off the floor
       const thrown = this.stance === 'fly' || this.stance === 'down';
@@ -1875,6 +1875,10 @@ export class Capri {
       down = { x: e.clientX, y: e.clientY, pos: { ...this.pos }, at: this.spritePoint(e.clientX, e.clientY) };
       this.track = [{ x: e.clientX, y: e.clientY, t: performance.now() }];
       if (thrown) this.pickUp(down);
+    };
+    this.canvas.addEventListener('mousedown', onDown);
+    window.addEventListener('mousedown', (e) => {
+      if (!down) onDown(e);
     });
     window.addEventListener('mousemove', (e) => {
       this.mouse = { x: e.clientX, y: e.clientY }; // a window she's in watches it
