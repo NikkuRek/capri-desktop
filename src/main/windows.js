@@ -142,6 +142,9 @@ function startNiriWatch({ overlay, onUpdate }) {
 
   start();
   return {
+    refresh() {
+      scheduleCompute();
+    },
     stop() {
       stopped = true;
       clearTimeout(computeTimer);
@@ -158,7 +161,7 @@ function startWindowWatch({ overlay, onUpdate }) {
   } catch {
     // not niri
   }
-  return { stop() {} };
+  return { stop() {}, refresh() {} };
 }
 
 module.exports = { startWindowWatch };

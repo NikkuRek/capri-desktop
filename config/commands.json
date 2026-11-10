@@ -1,10 +1,342 @@
 {
   "commands": {
+    "cachyos-update": {
+      "id": "cachyos-update",
+      "label": "Actualizar Sistema CachyOS (Espejos + Pacman)",
+      "command": "sudo cachyos-rate-mirrors && sudo pacman -Syu",
+      "args": [],
+      "inTerminal": true,
+      "aliases": [
+        "cachy",
+        "cachyos",
+        "actualiza cachy",
+        "actualizar cachy",
+        "actualiza cachyos",
+        "actualizar cachyos",
+        "actualiza el sistema",
+        "actualizar sistema",
+        "actualiza paquetes",
+        "actualizar paquetes",
+        "cachyos update",
+        "update cachyos",
+        "update"
+      ],
+      "description": "Actualiza la lista de espejos más rápidos y actualiza todos los paquetes con pacman"
+    },
+    "cachyos-full-update": {
+      "id": "cachyos-full-update",
+      "label": "Actualización Total CachyOS (Espejos + Pacman + AUR + Flatpak)",
+      "command": "sudo cachyos-rate-mirrors && yay -Syu && flatpak update -y",
+      "args": [],
+      "inTerminal": true,
+      "aliases": [
+        "actualiza todo",
+        "actualizar todo",
+        "actualiza todos los paquetes",
+        "actualizar todos los paquetes",
+        "full update",
+        "actualizacion completa",
+        "upgrade all"
+      ],
+      "description": "Actualización completa: optimiza espejos, actualiza repositorios oficiales, paquetes AUR y Flatpaks"
+    },
+    "cachyos-mirrors": {
+      "id": "cachyos-mirrors",
+      "label": "Optimizar Espejos de CachyOS",
+      "command": "sudo cachyos-rate-mirrors",
+      "args": [],
+      "inTerminal": true,
+      "aliases": [
+        "optimiza espejos",
+        "optimizar espejos",
+        "rate mirrors",
+        "cachyos rate mirrors",
+        "mirror"
+      ],
+      "description": "Mide la velocidad de los servidores de réplica y selecciona los más rápidos"
+    },
+    "cachyos-cleanup": {
+      "id": "cachyos-cleanup",
+      "label": "Limpiar Paquetes Huérfanos",
+      "command": "sudo pacman -Rns $(pacman -Qtdq)",
+      "args": [],
+      "inTerminal": true,
+      "aliases": [
+        "limpia paquetes",
+        "limpiar paquetes",
+        "limpieza del sistema",
+        "limpiar huerfanos",
+        "cleanup"
+      ],
+      "description": "Elimina dependencias huérfanas y paquetes en desuso"
+    },
+    "pc2-rdp": {
+      "id": "pc2-rdp",
+      "label": "Conexión RDP a PC2 (Tailscale)",
+      "command": "fish -c pc2-rdp",
+      "args": [],
+      "inTerminal": false,
+      "aliases": [
+        "pc2 rdp",
+        "pc2",
+        "conecta a pc2",
+        "conectar a pc2",
+        "conectar pc2",
+        "abre pc2",
+        "rdp pc2",
+        "remoto pc2"
+      ],
+      "description": "Conexión remota por escritorio xfreerdp a PC2 (100.79.131.120)"
+    },
+    "ad-rdp": {
+      "id": "ad-rdp",
+      "label": "Conexión RDP a Active Directory (AD)",
+      "command": "fish -c ad-rdp",
+      "args": [],
+      "inTerminal": false,
+      "aliases": [
+        "ad rdp",
+        "ad",
+        "servidor ad",
+        "conecta a ad",
+        "conectar a ad",
+        "conectar ad",
+        "abre ad",
+        "rdp ad"
+      ],
+      "description": "Conexión remota RDP al servidor Active Directory (192.168.16.9)"
+    },
+    "pc-rdp": {
+      "id": "pc-rdp",
+      "label": "Conexión RDP a PC",
+      "command": "fish -c pc-rdp",
+      "args": [],
+      "inTerminal": false,
+      "aliases": [
+        "pc rdp",
+        "conecta a pc",
+        "conectar a pc",
+        "conectar pc",
+        "abre pc",
+        "rdp pc"
+      ],
+      "description": "Conexión remota RDP a PC de trabajo (192.168.16.130)"
+    },
+    "fs-rdp": {
+      "id": "fs-rdp",
+      "label": "Conexión RDP a File Server (FS)",
+      "command": "fish -c fs-rdp",
+      "args": [],
+      "inTerminal": false,
+      "aliases": [
+        "fs rdp",
+        "fs",
+        "file server",
+        "servidor fs",
+        "conecta a fs",
+        "conectar fs",
+        "abre fs",
+        "rdp fs"
+      ],
+      "description": "Conexión remota RDP al servidor de archivos (192.168.16.10)"
+    },
+    "sql-rdp": {
+      "id": "sql-rdp",
+      "label": "Conexión RDP a Base de Datos SQL",
+      "command": "fish -c sql-rdp",
+      "args": [],
+      "inTerminal": false,
+      "aliases": [
+        "sql rdp",
+        "sql",
+        "servidor sql",
+        "conecta a sql",
+        "conectar sql",
+        "abre sql",
+        "rdp sql"
+      ],
+      "description": "Conexión remota RDP al servidor de bases de datos SQL (192.168.16.32)"
+    },
+    "profit-rdp": {
+      "id": "profit-rdp",
+      "label": "Conexión RDP a Profit",
+      "command": "fish -c profit-rdp",
+      "args": [],
+      "inTerminal": false,
+      "aliases": [
+        "profit rdp",
+        "profit",
+        "servidor profit",
+        "conecta a profit",
+        "conectar profit",
+        "abre profit",
+        "rdp profit"
+      ],
+      "description": "Conexión remota RDP al servidor Profit (192.168.16.2)"
+    },
+    "tailscale-up": {
+      "id": "tailscale-up",
+      "label": "Conectar VPN Tailscale",
+      "command": "sudo tailscale up",
+      "args": [],
+      "inTerminal": true,
+      "aliases": [
+        "conecta tailscale",
+        "conectar tailscale",
+        "inicia tailscale",
+        "activar tailscale",
+        "tailscale up",
+        "tailscale"
+      ],
+      "description": "Levanta y autentica la red privada de Tailscale"
+    },
+    "tailscale-down": {
+      "id": "tailscale-down",
+      "label": "Desconectar VPN Tailscale",
+      "command": "sudo tailscale down",
+      "args": [],
+      "inTerminal": true,
+      "aliases": [
+        "desconecta tailscale",
+        "desconectar tailscale",
+        "apaga tailscale",
+        "detener tailscale",
+        "tailscale down"
+      ],
+      "description": "Desconecta la interfaz y red de Tailscale"
+    },
+    "tailscale-status": {
+      "id": "tailscale-status",
+      "label": "Estado de VPN Tailscale",
+      "command": "tailscale status",
+      "args": [],
+      "inTerminal": true,
+      "aliases": [
+        "estado tailscale",
+        "estado de tailscale",
+        "ver tailscale",
+        "tailscale status"
+      ],
+      "description": "Muestra los nodos y dispositivos conectados en la red Tailscale"
+    },
+    "agydot": {
+      "id": "agydot",
+      "label": "Abrir Dotfiles en Antigravity IDE",
+      "command": "antigravity-ide /home/nikkurek/dotfiles",
+      "args": [],
+      "inTerminal": false,
+      "aliases": [
+        "agydot",
+        "dotfiles en agy",
+        "mis dotfiles",
+        "abre dotfiles",
+        "abrir dotfiles",
+        "dotfiles"
+      ],
+      "description": "Abre la carpeta del repositorio ~/dotfiles en Antigravity IDE"
+    },
+    "lzdot": {
+      "id": "lzdot",
+      "label": "LazyGit para Dotfiles",
+      "command": "lazygit --git-dir=/home/nikkurek/.dotfiles --work-tree=/home/nikkurek",
+      "args": [],
+      "inTerminal": true,
+      "aliases": [
+        "lzdot",
+        "lazygit dotfiles",
+        "git dotfiles"
+      ],
+      "description": "Abre LazyGit vinculado al repositorio de configuración del sistema"
+    },
+    "theme-switch": {
+      "id": "theme-switch",
+      "label": "Cambiar Tema del Sistema",
+      "command": "/home/nikkurek/dotfiles/scripts/theme-switch.fish",
+      "args": [],
+      "inTerminal": false,
+      "aliases": [
+        "cambiar tema",
+        "cambia el tema",
+        "theme switch",
+        "switch theme"
+      ],
+      "description": "Ejecuta el script de conmutación de tema claro/oscuro de Niri"
+    },
+    "lazygit": {
+      "id": "lazygit",
+      "label": "Abrir LazyGit",
+      "command": "lazygit",
+      "args": [],
+      "inTerminal": true,
+      "aliases": [
+        "lazygit",
+        "abre lazygit",
+        "abrir lazygit",
+        "git ui"
+      ],
+      "description": "Interfaz de usuario TUI en terminal para Git"
+    },
+    "yazi": {
+      "id": "yazi",
+      "label": "Abrir Yazi (Explorador TUI)",
+      "command": "yazi",
+      "args": [],
+      "inTerminal": true,
+      "aliases": [
+        "yazi",
+        "abre yazi",
+        "abrir yazi",
+        "explorador de consola"
+      ],
+      "description": "Gestor de archivos de terminal ultra-rápido"
+    },
+    "neovim": {
+      "id": "neovim",
+      "label": "Abrir Neovim",
+      "command": "nvim",
+      "args": [],
+      "inTerminal": true,
+      "aliases": [
+        "nvim",
+        "neovim",
+        "abre nvim",
+        "abre neovim"
+      ],
+      "description": "Editor de texto Neovim en terminal"
+    },
+    "fastfetch": {
+      "id": "fastfetch",
+      "label": "Mostrar Fastfetch",
+      "command": "fastfetch",
+      "args": [],
+      "inTerminal": true,
+      "aliases": [
+        "fastfetch",
+        "neofetch",
+        "info del sistema"
+      ],
+      "description": "Muestra las especificaciones del sistema e información de CachyOS"
+    },
+    "btop": {
+      "id": "btop",
+      "label": "Monitor del Sistema (Btop)",
+      "command": "btop",
+      "args": [],
+      "inTerminal": true,
+      "aliases": [
+        "btop",
+        "htop",
+        "abre btop",
+        "monitor de sistema"
+      ],
+      "description": "Monitor interactivo de recursos de CPU, memoria, discos y red"
+    },
     "brave": {
       "id": "brave",
       "label": "Abrir Brave Browser",
       "command": "brave",
       "args": [],
+      "inTerminal": false,
       "description": "Navegador web Brave para CachyOS / Arch Linux"
     },
     "dolphin": {
@@ -12,6 +344,7 @@
       "label": "Abrir Dolphin",
       "command": "dolphin",
       "args": [],
+      "inTerminal": false,
       "description": "Explorador de archivos Dolphin de KDE"
     }
   }

@@ -886,7 +886,7 @@ export const LINES = {
       title: 'Registro de misión', badge: 'INFORME',
       missions: 'Misiones', actions: 'Acciones', files: 'Archivos', errors: 'Errores', longest: 'La más larga',
       prompts: ['prompt', 'prompts'], approvals: ['permiso', 'permisos'], projects: ['proyecto', 'proyectos'],
-      copy: 'Copiar imagen', copied: 'Copiada ✓', copyFailed: 'No se pudo copiar', close: 'Cerrar',
+      copy: 'Copiar imagen', copied: 'Copiada', copyFailed: 'No se pudo copiar', close: 'Cerrar',
       lines: {
         none: ['Nada en el registro hoy. Noche tranquila.', 'Registro vacío. Claude se tomó el día libre.'],
         light: ['Día ligero. Me vale.', 'Turno corto. Aquí está el registro.'],

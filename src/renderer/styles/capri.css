@@ -900,6 +900,17 @@ html[data-motion='reduced'] .panel__bar {
   color: #ffffff;
 }
 
+.panel__mic.is-always-on {
+  --btn: #00e5ff;
+  color: #00e5ff;
+  border-color: rgba(0, 229, 255, 0.4);
+}
+
+.panel__mic.is-always-on:hover {
+  background: rgba(0, 229, 255, 0.2);
+  color: #ffffff;
+}
+
 .panel__mic.is-listening {
   --btn: #ff2255;
   --notch: #ff0044;

@@ -32,6 +32,9 @@ const CLOSE_ASK = /\b(close|shut|quit|kill|exit)|ferm|quitt|coupe|arr[êe]t|cier
 const TAG = /\[\[\s*(open|music|media|site|run|cmd)\s*:\s*([^\]]*)\]\]/i;
 // "open", "launch", "ouvre", "lance", "abre", "открой"... in any of her languages
 const OPEN_ASK = /\b(open|launch|start|run|exec)\b|ouvr|lance|démarre|abre|abrir|inicia|iniciar|ejecuta|ejecutar|corre|correr|executa|открой|запусти/i;
+const DEV_ASK = /\b(?:agy|antigravity|proyectos?|wofi)\b/i;
+const ACTION_ASK = /\b(?:actualiza|actualizar|update|upgrade|conecta|conectar|connect|desconecta|desconectar|limpia|limpiar|optimiza|optimizar|rdp|tailscale|lazygit|yazi|fastfetch|btop|htop|neovim|nvim|cachy|cachyos)\b/i;
+const AI_CMD_ASK = /^(?:ejecuta|corre|exec|run|comando|terminal)\s*[:]/i;
 // what to do with the music playing, said plainly (only when it's about music, or said in a few words)
 const MEDIA_ASK = [
   ['pause', /\b(pause|pausa|pausar)\b|stop (the )?music|arrête la musique|пауз/i],
@@ -253,6 +256,7 @@ export class Chat {
     this.onMessage = null; // () => void: you said something to her
     this.waitingWhen = null; // a reminder you asked for without saying when: { text, until }
     this.voiceRec = new VoiceRecognition(host);
+    this.initContinuousVoice();
     host.onChatDelta(({ id, text }) => this.onDelta(id, text));
   }
 
@@ -349,17 +353,80 @@ export class Chat {
       return;
     }
     this.open = true;
+    this.panel.setMicAlwaysOn(true);
     setTimeout(() => this.panel.chatInput.focus(), 150); // once the overlay has the keyboard
     capri.perform('hop');
     capri.nextMove = capri.nextGaze = performance.now() + STAY_MS;
   }
 
-  async toggleVoiceCommand() {
-    if (!this.open) {
-      await this.start();
-      await new Promise((r) => setTimeout(r, 200));
+  initContinuousVoice() {
+    if (!this.voiceRec?.isSupported()) return;
+
+    this.voiceRec.startContinuous({
+      lang: 'es-ES',
+      onWakeWord: async ({ fullText, command, isPrompt }) => {
+        await this.handleWakeWord({ fullText, command, isPrompt });
+      },
+      onSpeechStateChange: (speaking) => {
+        if (this.open) {
+          this.panel.setMicListening(speaking);
+        }
+      },
+      onInterim: (text) => {
+        if (this.open && text && this.panel.chatInput) {
+          this.panel.chatInput.value = text;
+        }
+      },
+      onError: (err) => {
+        console.warn('[capri:chat] Error en escucha continua:', err);
+      },
+    });
+  }
+
+  async handleWakeWord({ fullText, command, isPrompt }) {
+    console.log('[capri:chat] Wake word Capri detectada:', { fullText, command, isPrompt });
+
+    // Si Capri estaba guardada/escondida, sacarla a la pantalla
+    if (this.capri.stowed) {
+      this.host.setConfig({ visible: true });
+      await this.capri.unstow();
+    }
+    this.capri.wake();
+
+    if (isPrompt) {
+      // Dijo únicamente "Capri": confirmación con sonido y esperar orden hablada
+      this.voice?.play('bolt');
+      if (!this.open) {
+        await this.start();
+      }
+      this.panel.setMicListening(true);
+      if (this.panel.chatInput) {
+        this.panel.chatInput.placeholder = 'Te escucho, dime la orden...';
+        this.panel.chatInput.value = '';
+        this.panel.chatInput.focus();
+      }
+      return;
     }
 
+    if (command) {
+      // Dijo "Capri <orden>" o completó la orden hablada
+      this.voice?.play('bolt');
+      if (!this.open) {
+        await this.start();
+      }
+      this.panel.setMicListening(false);
+      if (this.panel.chatInput) {
+        this.panel.chatInput.value = command;
+      }
+      setTimeout(() => {
+        if (this.open && !this.turn) {
+          this.send(command);
+        }
+      }, 150);
+    }
+  }
+
+  async toggleVoiceCommand() {
     if (!this.voiceRec?.isSupported()) {
       this.panel.say({
         kind: 'info',
@@ -370,49 +437,37 @@ export class Chat {
       return;
     }
 
-    if (this.voiceRec.active) {
-      this.voiceRec.stop();
+    if (!this.open) {
+      await this.start();
+      await new Promise((r) => setTimeout(r, 200));
+    }
+
+    // Si estaba esperando orden directa tras pulsar, detener la espera
+    if (this.voiceRec.waitingForFollowup) {
+      this.voiceRec.waitingForFollowup = false;
+      this.panel.setMicListening(false);
+      if (this.panel.chatInput) {
+        this.panel.chatInput.placeholder = this.t.placeholder;
+      }
       return;
     }
 
-    const prevPlaceholder = this.panel.chatInput.placeholder || '';
-    this.panel.chatInput.placeholder = 'Escuchando... Di un comando';
+    // Activar modo escucha de orden directa (sin necesidad de decir "Capri")
     this.voice?.play('tick');
-
-    await this.voiceRec.start({
-      lang: 'es-ES',
-      onStateChange: (listening) => {
-        this.panel.setMicListening(listening);
-        if (!listening) {
-          this.panel.chatInput.placeholder = prevPlaceholder;
-        }
-      },
-      onInterim: (text) => {
-        if (text) {
-          this.panel.chatInput.value = text;
-        }
-      },
-      onResult: (finalText) => {
-        if (!finalText || !finalText.trim()) return;
-        this.panel.chatInput.value = finalText.trim();
-        this.voice?.play('land');
-        setTimeout(() => {
-          if (this.open && !this.turn) {
-            this.send(finalText.trim());
-          }
-        }, 250);
-      },
-      onError: (err) => {
-        console.warn('[capri:chat] Error en reconocimiento de voz:', err);
-        this.panel.setMicListening(false);
-        this.panel.chatInput.placeholder = prevPlaceholder;
-      },
-    });
+    this.panel.setMicListening(true);
+    if (this.panel.chatInput) {
+      this.panel.chatInput.placeholder = 'Escuchando orden directa...';
+      this.panel.chatInput.focus();
+    }
+    this.voiceRec.triggerDirectListen(10000);
   }
 
   close() {
     if (!this.open) return;
-    this.voiceRec?.cancel();
+    // La escucha continua se mantiene activa para responder a "Capri", solo cancelamos follow-up
+    if (this.voiceRec?.waitingForFollowup) {
+      this.voiceRec.waitingForFollowup = false;
+    }
     this.open = false;
     if (this.turn) this.host.chatStop(this.turn);
     this.turn = 0;
@@ -437,6 +492,19 @@ export class Chat {
     const asked = this.agent ? null : this.asked(text);
     if (asked?.kind === 'look') return this.sendLook(text, id);
     const early = asked && asked.kind !== 'close' ? this.doNow(asked) : null;
+    if (early && ['open', 'pc', 'media', 'files', 'shot', 'youtube', 'music', 'play', 'web'].includes(asked?.kind)) {
+      const done = await early;
+      if (done && (done.line || done.offer || done.confirm || done.files || done.reminder)) {
+        this.turn = 0;
+        this.panel.setChatBusy(false);
+        this.after('', '…', asked, Promise.resolve(done), text);
+        if (done.line) {
+          this.remember({ role: 'assistant', content: done.line });
+        }
+        this.listApps();
+        return;
+      }
+    }
     this.bond?.heard(text); // "sorry": she lets it go
     await Promise.race([this.appsReady, new Promise((r) => setTimeout(r, 1500))]);
     // what she greeted you with (angry, sulking…), in the conversation before your message, so her
@@ -592,7 +660,8 @@ export class Chat {
     if (after && !VAGUE_SONG.test(after) && !HER_PICK.test(after)) return { kind: 'play', song: songOf(after.replace(/[\s.!?]+$/, '')), before: text.trim().slice(0, both.index) };
     const play = PLAY_ASK.exec(text.trim())?.[1];
     if (play && !VAGUE_SONG.test(play) && !HER_PICK.test(play)) return { kind: 'play', song: songOf(play.replace(/[\s.!?]+$/, '')) };
-    if (OPEN_ASK.test(text) && count <= 14) return { kind: 'open', text };
+    if (AI_CMD_ASK.test(text) && count <= 30) return { kind: 'open', text };
+    if ((OPEN_ASK.test(text) || DEV_ASK.test(text) || ACTION_ASK.test(text)) && count <= 18) return { kind: 'open', text };
     return null;
   }
 
@@ -1052,10 +1121,11 @@ export class Chat {
     this.listApps();
   }
 
-  // What she can do on the PC when you ask (Windows), and nothing else.
+  // What she can do on the PC when you ask, and how she responds.
   powers() {
     const lines = [
-      'Only when the user asks you to open an app, a game, run a command in the terminal, a file or folder on their desktop, or a folder like Downloads, to play music, to control the music playing, or to open a website: say in a few words that you will, and end your answer with one tag: [[open: NAME]] (e.g. [[open: Chrome]], [[open: terminal]], or [[open: fastfetch]]), [[music: ARTIST - SONG]] (it plays on YouTube; if they did not say which song, pick one that fits), [[media: ACTION]] (ACTION: pause, play, next, previous, volup, voldown or mute), or [[site: ADDRESS]]. Some of these get a button to confirm, so never say it is already done. Any other time, write no tag at all: there are no other tags.',
+      'You are Capri, a cyberpunk desktop companion in Arch Linux / CachyOS who can launch terminal commands in Kitty, manage development projects in /run/media/nikkurek/FILES/dev with Antigravity IDE, update system packages (CachyOS, pacman, yay, flatpak), connect to remote servers (RDP, Tailscale), open apps, and play music.',
+      'When the user asks you to open an app, a game, update the system, run a command in the terminal, open a dev project, open a file/folder, play music, or open a website: say enthusiastically in character (using cyberpunk slang like choom, preem, nova) that you will, and end your answer with one tag: [[open: NAME]] (e.g. [[open: cachyos-update]], [[open: Chrome]], [[open: pc2-rdp]], or [[open: fastfetch]]), [[music: ARTIST - SONG]], [[media: ACTION]], or [[site: ADDRESS]]. Never refuse terminal commands or system updates; you have full permission and capabilities to execute them in Kitty.',
     ];
     if (this.apps.length) {
       const open = this.apps.map(({ name, label }) => (label && label !== name ? `${name} (${label})` : name)).join(', ');
@@ -1067,7 +1137,6 @@ export class Chat {
       if (soon.length) lines.push(`Reminders you're keeping for them: ${soon.map((r) => `${clock(r.at, this.brain.lang)}${r.text ? ` (${r.text})` : ''}`).join('; ')}.`);
     }
     lines.push('Your system also searches the user\'s files when they ask you to find one, searches the web when they ask, takes screenshots, and starts Roblox games by name: what it did shows under your answer, so never make up file names or results.');
-    lines.push('Apart from that, you can\'t see the user\'s screen or files, and you can\'t touch anything else on their PC (settings, files): if asked, say plainly that you can\'t, in character, and don\'t pretend to.');
     return lines;
   }
 
@@ -1208,7 +1277,7 @@ function wanted(kind, text) {
   if (kind === 'media') return music || SOUND.test(text) || MEDIA_ASK.some(([, re]) => re.test(text));
   if (kind === 'site') return OPEN_ASK.test(text) || SITE.test(text);
   if (kind === 'close') return CLOSE_ASK.test(text);
-  return OPEN_ASK.test(text) || PLAY.test(text); // an app, or a game to play
+  return OPEN_ASK.test(text) || PLAY.test(text) || DEV_ASK.test(text) || ACTION_ASK.test(text) || AI_CMD_ASK.test(text); // an app, or a game to play
 }
 
 // The app named by her close tag: [[close: AM Music]], or a sloppier [[close]] AM Music.

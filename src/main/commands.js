@@ -43,11 +43,26 @@ function runCommand(commandId) {
   }
 
   try {
-    const child = spawn(entry.command, entry.args || [], {
-      detached: true,
-      stdio: 'ignore',
-      env: process.env,
-    });
+    let child;
+    if (entry.inTerminal) {
+      child = spawn('kitty', ['-e', 'bash', '-c', `${entry.command}; echo ''; echo 'Presiona Enter para cerrar...'; read -r`], {
+        detached: true,
+        stdio: 'ignore',
+        env: process.env,
+      });
+    } else if (Array.isArray(entry.args) && entry.args.length) {
+      child = spawn(entry.command, entry.args, {
+        detached: true,
+        stdio: 'ignore',
+        env: process.env,
+      });
+    } else {
+      child = spawn('bash', ['-c', entry.command], {
+        detached: true,
+        stdio: 'ignore',
+        env: process.env,
+      });
+    }
 
     child.unref();
     return { ok: true, command: entry.command, id: commandId };

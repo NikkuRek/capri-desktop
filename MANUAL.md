@@ -84,6 +84,50 @@ Capri busca automáticamente entre los accesos `.desktop` del sistema, paquetes 
 * *"Abre la terminal"* o *"Abre Kitty"* $\rightarrow$ Lanza la terminal Kitty.
 * *"Abre Balatro"*, *"Abre Brawlhalla"*, *"Abre Hollow Knight"* $\rightarrow$ Lanza el juego correspondiente en Steam.
 
+### Apertura de Proyectos de Desarrollo en Antigravity IDE (`agy`)
+Capri está sincronizada con tu directorio de desarrollo local (`/run/media/nikkurek/FILES/dev`) y con tu atajo de Wofi (<kbd>Mod</kbd>+<kbd>P</kbd>). Puedes pedirle por voz o por chat que abra cualquier proyecto directamente en **Antigravity IDE** (`agy`), o que invoque el menú interactivo de Wofi:
+
+* *"Abre archify en agy"* o *"archify en agy"* $\rightarrow$ Abre la carpeta `/run/media/nikkurek/FILES/dev/archify` en Antigravity IDE.
+* *"Abre el proyecto ciccorp-b2b"* o *"ciccorp b2b"* $\rightarrow$ Detecta el proyecto y lo lanza en Antigravity IDE.
+* *"Abre ping-pong-league"* o *"ai-file-sorter en agy"* $\rightarrow$ Abre el repositorio solicitado en Antigravity.
+* *"Abre capri-desktop"* $\rightarrow$ Abre el proyecto de Capri en el IDE.
+* *"Ver proyectos"*, *"Selector de proyectos"* o *"Proyectos"* $\rightarrow$ Dispara inmediatamente tu script `~/.local/bin/dev-selector.sh`, desplegando el selector interactivo de **Wofi** en Niri.
+
+> **💡 Consejo:** Capri normaliza automáticamente guiones, mayúsculas y acentos. Si pronuncias *"abre ciccorp b2b en agy"*, Capri lo asociará instantáneamente a la carpeta `ciccorp-b2b`.
+
+### Actualización y Mantenimiento de CachyOS
+Capri incluye comandos especializados para el mantenimiento de tu sistema CachyOS, ejecutándose en Kitty para que puedas ingresar tu contraseña de `sudo` y revisar los registros:
+
+* *"Actualiza el sistema"* o *"Actualiza cachyos"* $\rightarrow$ Ejecuta el alias oficial de CachyOS: optimiza la velocidad de los servidores de réplica (`sudo cachyos-rate-mirrors`) y actualiza todos los repositorios oficiales con `sudo pacman -Syu`.
+* *"Actualiza todos los paquetes"* o *"Actualizar todo"* $\rightarrow$ Actualización integral de todo el sistema: espejos más rápidos + paquetes oficiales + paquetes de AUR con `yay -Syu` + aplicaciones `flatpak update -y`.
+* *"Optimiza espejos"* $\rightarrow$ Ejecuta `sudo cachyos-rate-mirrors` para conectar a los servidores más veloces.
+* *"Limpia paquetes"* $\rightarrow$ Limpia dependencias huérfanas con `sudo pacman -Rns $(pacman -Qtdq)`.
+
+### Conexiones Remotas RDP (`xfreerdp3`)
+Capri se enlaza directamente con tus funciones de Fish Shell (`~/.config/fish/functions/`) para abrir sesiones remotas en ventanas independientes:
+
+* *"Conéctame a PC2"* o *"PC2 RDP"* $\rightarrow$ Conexión remota por Tailscale a `100.79.131.120`.
+* *"Conéctame a AD"* o *"Abre AD"* $\rightarrow$ Conexión al servidor Active Directory (`192.168.16.9`).
+* *"Conéctame a PC"* $\rightarrow$ Conexión a tu estación local (`192.168.16.130`).
+* *"Abre FS"* $\rightarrow$ Conexión al File Server (`192.168.16.10`).
+* *"Abre SQL"* $\rightarrow$ Conexión al servidor de base de datos (`192.168.16.32`).
+* *"Abre Profit"* $\rightarrow$ Conexión al servidor Profit (`192.168.16.2`).
+
+### Red y VPN (Tailscale)
+* *"Conecta Tailscale"* $\rightarrow$ Levanta y conecta tu red privada (`sudo tailscale up`).
+* *"Desconecta Tailscale"* $\rightarrow$ Desactiva la conexión VPN (`sudo tailscale down`).
+* *"Estado de Tailscale"* $\rightarrow$ Muestra los nodos activos en terminal (`tailscale status`).
+
+### Dotfiles y Herramientas TUI de Kitty
+* *"Abre mis dotfiles en agy"* $\rightarrow$ Abre tu repositorio `~/dotfiles` en Antigravity IDE.
+* *"Abre lazygit"* $\rightarrow$ Abre la interfaz interactiva de Git en Kitty.
+* *"LazyGit dotfiles"* (o *"lzdot"*) $\rightarrow$ Abre LazyGit directamente sobre tus dotfiles.
+* *"Abre yazi"* $\rightarrow$ Lanza el explorador de consola ultra-rápido en Kitty.
+* *"Abre Neovim"* (o *"nvim"*) $\rightarrow$ Abre el editor Neovim en Kitty.
+* *"Abre btop"* $\rightarrow$ Monitor de recursos del sistema.
+* *"Fastfetch"* $\rightarrow$ Muestra el resumen de hardware y sistema de CachyOS.
+* *"Cambia el tema"* $\rightarrow$ Ejecuta tu script de cambio de tema en `~/dotfiles/scripts/theme-switch.fish`.
+
 ### Apertura de Páginas Web (en Chrome y/o Brave)
 Capri puede abrir sitios web reconociendo nombres populares, enlaces completos (`http(s)://`) o dominios (`.com`, `.org`, etc.), permitiéndote especificar en qué navegador abrirlos:
 
@@ -93,9 +137,20 @@ Capri puede abrir sitios web reconociendo nombres populares, enlaces completos (
 * *"Abre x.com en Brave"* $\rightarrow$ Abre X (Twitter) en Brave.
 * *"Abre Netflix"* o *"Abre Reddit"* $\rightarrow$ Lo abre en tu navegador predeterminado si no especificas uno.
 
-### Ejecución de Comandos en Terminal
-Capri puede lanzar comandos en una ventana interactiva de tu terminal **Kitty**:
+### Ejecución de Comandos en Terminal y Asistida por IA
+Capri puede lanzar comandos tanto predefinidos como comandos dinámicos generados por Inteligencia Artificial en tu terminal **Kitty**:
 
+#### 1. Comandos Asistidos por IA (`Ejecuta: <petición>`)
+Cuando una orden no está en la lista de comandos fijos, puedes usar el prefijo **`Ejecuta:`** (o hablarle diciendo *"Ejecuta..."*). Capri analizará tu petición con la IA, detectará qué proyecto de desarrollo necesitas de tu carpeta `/run/media/nikkurek/FILES/dev`, compondrá el comando Bash exacto y lo ejecutará en Kitty:
+
+* *"Ejecuta: docker compose up del proyecto ciccorp-b2b"* $\rightarrow$ La IA detecta la ruta del proyecto y ejecuta:  
+  `cd "/run/media/nikkurek/FILES/dev/ciccorp-b2b" && docker compose up`
+* *"Ejecuta: ver los puertos en escucha"* $\rightarrow$ Ejecuta `ss -tulpn` en Kitty.
+* *"Ejecuta: cuánto espacio queda en el disco"* $\rightarrow$ Ejecuta `df -h`.
+* *"Ejecuta: docker compose down del proyecto archify"* $\rightarrow$ Navega a `archify` y detiene los contenedores.
+* *"Ejecuta: compila el proyecto capri-desktop"* $\rightarrow$ Ejecuta `npm run build` dentro del directorio.
+
+#### 2. Comandos Directos y Herramientas CLI
 * *"ejecuta en terminal: fastfetch"*
 * *"corre en terminal: git status"*
 * *"ejecuta btop"* o *"ejecuta htop"* (herramientas interactivas de CLI se abren automáticamente en terminal).
@@ -114,29 +169,51 @@ Capri puede lanzar comandos en una ventana interactiva de tu terminal **Kitty**:
 
 ---
 
-## 5. Reconocimiento de Voz y Comandos por Micrófono
+## 5. Reconocimiento de Voz y Modo Manos Libres (Wake Word "Capri")
 
-Capri integra un sistema avanzado de **reconocimiento de voz** que te permite hablarle directamente desde cualquier aplicación o juego:
+Capri integra un sistema de **escucha continua en segundo plano** tipo **Jarvis** o **Google Assistant**, permitiéndote hablarle en cualquier momento sin necesidad de hacer clic ni tocar el teclado:
 
-### ¿Cómo activar el micrófono?
-1. **Botón en el Chat**: Haz clic en el botón `🎙️` situado junto a la caja de texto en su panel.
-2. **Atajo Global**: Presiona <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>M</kbd> en cualquier momento (incluso con Capri en segundo plano o mientras programas).
+### ¿Cómo funciona la palabra de activación ("Capri")?
+El micrófono se mantiene **siempre abierto y atento en segundo plano**:
+* **Comando directo en una sola frase:**  
+  Di **"Capri"** seguido de tu orden. Capri detectará la palabra clave, despertará, abrirá su panel y ejecutará la acción de inmediato:
+  - 🗣️ *"Capri, ejecuta docker ps"*
+  - 🗣️ *"Capri, abre Google Chrome"*
+  - 🗣️ *"Capri, actualiza cachy"*
+  - 🗣️ *"Capri, abre el proyecto ciccorp b2b en agy"*
+  - 🗣️ *"Oye Capri, ¿cuánta memoria RAM me queda?"*
+  - 🗣️ *"Hey Capri, pon música en YouTube"*
+* **Activación en dos pasos (Atención primero):**  
+  Si solo dices **"Capri"** (u *"Oye Capri"*):
+  - Capri emite un sonido de confirmación auditiva (`bolt`/`tick`).
+  - Despierta en el escritorio y abre su panel en modo de escucha activa (`🎙️ Te escucho, dime la orden...`).
+  - La siguiente frase que pronuncies se tomará de inmediato como la instrucción a ejecutar.
+* **Privacidad y filtrado de conversaciones:**  
+  Si hablas con otra persona o hay ruido ambiental y no mencionas "Capri", el audio se descarta en silencio sin interrumpir tu trabajo ni abrir ventanas.
+
+### Control Manual y Atajos
+1. **Botón Micrófono `🎙️`**:
+   - Color cian/neón constante: Micrófono en escucha continua esperando la palabra *"Capri"*.
+   - Pulso magenta/rojo: Voz activa detectada y procesándose.
+   - Clic en el botón: Activa inmediatamente la captura de una orden directa (sin necesidad de decir "Capri").
+2. **Atajo Global**: Presiona <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>M</kbd> en cualquier momento para activar o pausar el micrófono.
 3. **Bandeja del Sistema**: Clic derecho en el icono de la bandeja $\rightarrow$ *🎙️ Reconocimiento por voz*.
 
-### Indicadores visuales y flujo
-* Al activarse, el botón `🎙️` pulsa en neón magenta/rojo y el campo de texto muestra:  
-  `🎙️ Escuchando... Di un comando`
-* Capri escucha tu voz y transcribe en tiempo real.
-* **Detección Automática de Silencio**: Cuando terminas de hablar (tras ~1.5 segundos de silencio), Capri detiene la grabación automáticamente, procesa tu orden y ejecuta la acción correspondiente sin que tengas que tocar el ratón.
-* Si deseas cancelar o forzar el envío antes de tiempo, puedes hacer clic de nuevo sobre el botón `🎙️`.
-
-### Arquitectura Dual Tolerante a Fallos (STT)
-1. **Web Speech API**: Si el entorno cuenta con el backend de reconocimiento por streaming, Capri transcribe tus palabras al vuelo conforme las pronuncias.
-2. **Grabación WAV + IA Multimodal Gemini**: Si el backend de Chromium no está disponible en Linux, el motor conmuta de forma automática e instantánea al capturador de audio de baja latencia con codificación WAV (16 kHz PCM) y transcripción mediante **Gemini Flash**.
+### Arquitectura de Escucha Continua
+* **VAD (Voice Activity Detection)**: Análisis en tiempo real de volumen RMS para detectar habla humana. En momentos de silencio o ruido de fondo, el consumo de CPU es imperceptible y no se realizan peticiones de red.
+* **Detección Automática de Pausa**: Tras ~750ms de pausa al terminar de hablar, Capri segmenta el audio y procesa la frase.
+* **STT Multimodal de Ultra Baja Latencia**: Transcripción rápida mediante Gemini Flash / Web Speech para responder casi instantáneamente.
 
 ### Ejemplos de comandos hablados
 * 🗣️ *"Abre Chrome"* $\rightarrow$ Inicia Google Chrome.
 * 🗣️ *"Abre YouTube en Brave"* $\rightarrow$ Abre YouTube en tu navegador Brave.
+* 🗣️ *"Actualiza todos los paquetes"* $\rightarrow$ Abre Kitty y actualiza espejos + pacman + AUR + Flatpaks.
+* 🗣️ *"Conéctame a PC2"* $\rightarrow$ Lanza sesión RDP a tu máquina remota en Tailscale.
+* 🗣️ *"Conecta Tailscale"* $\rightarrow$ Levanta la conexión VPN.
+* 🗣️ *"Abre lazygit"* $\rightarrow$ Abre la interfaz interactiva de Git en Kitty.
+* 🗣️ *"Abre archify en agy"* $\rightarrow$ Abre el proyecto en Antigravity IDE.
+* 🗣️ *"Abre el proyecto ciccorp b2b"* $\rightarrow$ Lanza el proyecto en Antigravity IDE.
+* 🗣️ *"Selector de proyectos"* $\rightarrow$ Abre el menú Wofi de proyectos recientes.
 * 🗣️ *"Ejecuta fastfetch"* $\rightarrow$ Abre la terminal Kitty y muestra la información del sistema.
 * 🗣️ *"Haz una captura de pantalla"* $\rightarrow$ Captura la pantalla y la guarda.
 * 🗣️ *"Pon Bohemian Rhapsody en YouTube"* $\rightarrow$ Reproduce la canción en el navegador.
@@ -148,6 +225,7 @@ Capri integra un sistema avanzado de **reconocimiento de voz** que te permite ha
 ## 6. Modelos de IA (Ollama Local & Google Gemini)
 
 Capri cuenta con un sistema híbrido de inteligencia artificial:
+
 
 1. **Ollama (100% Local y Privado)**:
    - Utiliza modelos locales como `llama3:latest`, `qwen`, `mistral`, etc.

@@ -385,7 +385,13 @@ export class Panel {
   setMicListening(listening) {
     if (!this.chatMic) return;
     this.chatMic.classList.toggle('is-listening', Boolean(listening));
-    this.chatMic.setAttribute('title', listening ? 'Escuchando... Di un comando o pulsa para detener' : 'Comando por voz (Ctrl+Alt+M)');
+    this.chatMic.setAttribute('title', listening ? 'Escuchando voz activa...' : 'Capri siempre escuchando (Di "Capri <orden>") | Clic para orden directa (Ctrl+Alt+M)');
+  }
+
+  setMicAlwaysOn(alwaysOn) {
+    if (!this.chatMic) return;
+    this.chatMic.classList.toggle('is-always-on', Boolean(alwaysOn));
+    this.chatMic.setAttribute('title', alwaysOn ? 'Capri siempre escuchando (Di "Capri <orden>") | Clic para orden directa (Ctrl+Alt+M)' : 'Comando por voz (Ctrl+Alt+M)');
   }
 
   // A button of the message on screen says something else now ("Copied").

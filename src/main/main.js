@@ -5,7 +5,7 @@ const os = require('node:os');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const {
-  app, BrowserWindow, Tray, Menu, ipcMain, screen, protocol, net, shell, globalShortcut, nativeImage, session,
+  app, BrowserWindow, Tray, Menu, ipcMain, screen, protocol, net, shell, globalShortcut, nativeImage, session, clipboard,
 } = require('electron');
 
 app.commandLine.appendSwitch('remote-debugging-port', '9222');
@@ -441,97 +441,14 @@ function rebuildTray() {
     } catch { }
   }
 
-  const menuItems = [
-    { label: `${t.title} (${isFull ? 'Full' : 'Only-View'})`, enabled: false },
-    { type: 'separator' },
+  const preferencesSubmenu = [
     {
-      label: t.modeOnlyView || 'Modo: Solo Visual (Only-View)',
-      type: 'radio',
-      checked: !isFull,
-      click: () => updateConfig({ mode: 'only-view' }),
-    },
-    {
-      label: t.modeFull || 'Modo: Completo (IA + IDE + Shell)',
-      type: 'radio',
-      checked: isFull,
-      click: () => updateConfig({ mode: 'full' }),
-    },
-    { type: 'separator' },
-  ];
-
-  if (isFull) {
-    menuItems.push(
-      { label: t.chat || 'Hablar con Capri', click: () => sendCommand('chat') },
-      { label: 'Reconocimiento por voz (Ctrl+Alt+M)', click: () => sendCommand('voice') },
-      { label: '🎙️ Reconocimiento por voz (Ctrl+Alt+M)', click: () => sendCommand('voice') },
-      { label: 'Escanear pantalla', click: () => sendCommand('look') },
-      {
-        label: t.provider || 'Proveedor de IA',
-        submenu: [
-          {
-            label: t.providerGemini || 'Google Gemini Flash',
-            type: 'radio',
-            checked: (cfg.aiProvider || 'gemini') === 'gemini',
-            click: () => updateConfig({ aiProvider: 'gemini' }),
-          },
-          {
-            label: t.providerOllama || 'Llama 3 (Ollama local)',
-            type: 'radio',
-            checked: cfg.aiProvider === 'ollama',
-            click: () => updateConfig({ aiProvider: 'ollama' }),
-          },
-        ],
-      },
-      {
-        label: 'Olvidar conversaciones',
-        click: () => {
-          saveMemory({ history: [] });
-          overlay?.webContents.send('chat:forget');
-        },
-      },
-      { type: 'separator' },
-    );
-  }
-
-  menuItems.push(
-    { label: t.satellite, click: () => sendCommand('satellite') },
-    { label: t.possessNow, click: () => sendCommand('possess') },
-    { label: t.celebrate, click: () => sendCommand('celebrate') },
-    { label: t.intro, click: () => sendCommand('intro') },
-    { label: t.teleport, accelerator: 'Ctrl+Alt+T', click: () => sendCommand('teleport') },
-    { label: t.sleep, click: () => sendCommand('sleep') },
-    { label: cfg.visible ? t.hide : t.show, accelerator: 'Ctrl+Alt+C', click: () => toggleVisible() },
-    {
-      label: t.compact,
-      accelerator: 'Ctrl+Alt+V',
-      type: 'checkbox',
-      checked: Boolean(cfg.compact),
-      click: (item) => toggleCompact(item.checked),
-    },
-  );
-
-  if (isFull) {
-    menuItems.push(
-      { type: 'separator' },
-      {
-        label: t.commands || 'Comandos rápidos',
-        submenu: commands.listCommands().map((cmd) => ({
-          label: cmd.label,
-          click: () => commands.runCommand(cmd.id),
-        })),
-      },
-    );
-  }
-
-  menuItems.push(
-    { type: 'separator' },
-    {
-      label: t.size,
+      label: t.size || 'Tamaño',
       submenu: [
-        [t.small, 0.45],
-        [t.medium, 0.6],
-        [t.large, 0.8],
-        [t.huge, 1.0],
+        [t.small || 'Pequeña (45%)', 0.45],
+        [t.medium || 'Normal (60%)', 0.6],
+        [t.large || 'Grande (80%)', 0.8],
+        [t.huge || 'Gigante (100%)', 1.0],
       ].map(([label, scale]) => ({
         label,
         type: 'radio',
@@ -540,22 +457,48 @@ function rebuildTray() {
       })),
     },
     {
-      label: t.sound,
+      label: t.theme || 'Estilo de ventanas',
       submenu: [
-        { label: t.mute, type: 'checkbox', checked: cfg.muted, click: (item) => updateConfig({ muted: item.checked }) },
-        { type: 'separator' },
+        { label: 'Night City', type: 'radio', checked: (cfg.theme || 'nightcity') === 'nightcity', click: () => updateConfig({ theme: 'nightcity' }) },
+        { label: t.themeClassic || 'Clásico (Classique)', type: 'radio', checked: cfg.theme === 'classic', click: () => updateConfig({ theme: 'classic' }) },
+      ],
+    },
+    {
+      label: t.provider || 'Proveedor de IA',
+      submenu: [
         {
-          label: t.soundsDir,
-          click: () => {
-            fs.mkdirSync(userSoundsDir(), { recursive: true });
-            shell.openPath(userSoundsDir());
-          },
+          label: t.providerGemini || 'Google Gemini Flash',
+          type: 'radio',
+          checked: (cfg.aiProvider || 'gemini') === 'gemini',
+          click: () => updateConfig({ aiProvider: 'gemini' }),
+        },
+        {
+          label: t.providerOllama || 'Llama 3 (Ollama local)',
+          type: 'radio',
+          checked: cfg.aiProvider === 'ollama',
+          click: () => updateConfig({ aiProvider: 'ollama' }),
         },
       ],
     },
     {
-      label: t.screen,
-      enabled: screenList.length > 1,
+      label: 'Modo de Capri',
+      submenu: [
+        {
+          label: t.modeFull || 'Completo (IA + IDE + Shell)',
+          type: 'radio',
+          checked: isFull,
+          click: () => updateConfig({ mode: 'full' }),
+        },
+        {
+          label: t.modeOnlyView || 'Solo Visual (Only-View)',
+          type: 'radio',
+          checked: !isFull,
+          click: () => updateConfig({ mode: 'only-view' }),
+        },
+      ],
+    },
+    ...(screenList.length > 1 ? [{
+      label: t.screen || 'Mover a pantalla',
       submenu: screenList.map((d, i) => {
         const match = Object.entries(niriOutputs).find(([_, out]) =>
           Math.abs(out.logical.x - d.bounds.x) < 5 && Math.abs(out.logical.y - d.bounds.y) < 5
@@ -565,62 +508,76 @@ function rebuildTray() {
           label: `${i + 1} — ${d.size.width}×${d.size.height}${outName}`,
           type: 'radio',
           checked: d.id === current,
-          click: () => {
-            moveOverlay(d.id);
-          },
+          click: () => moveOverlay(d.id),
         };
       }),
+    }] : []),
+    { type: 'separator' },
+    {
+      label: t.mute || 'Silenciar sonidos',
+      type: 'checkbox',
+      checked: Boolean(cfg.muted),
+      click: (item) => updateConfig({ muted: item.checked }),
     },
     {
-      label: t.motion,
-      submenu: [
-        ['auto', t.motionAuto],
-        ['full', t.motionFull],
-        ['reduced', t.motionReduced],
-      ].map(([motion, label]) => ({
-        label,
-        type: 'radio',
-        checked: (cfg.motion || 'auto') === motion,
-        click: () => updateConfig({ motion, motionAsked: true }),
-      })),
+      label: t.wander || 'Deambular libremente',
+      type: 'checkbox',
+      checked: Boolean(cfg.wander),
+      click: (item) => updateConfig({ wander: item.checked }),
     },
     {
-      label: t.display,
-      submenu: [
-        ['auto', t.displayAuto],
-        ['gl', t.displayGl],
-        ['software', t.displaySoftware],
-      ].map(([render, label]) => ({
-        label,
-        type: 'radio',
-        checked: (cfg.render || 'auto') === render,
-        click: () => {
-          if (cfg.render === render) return;
-          config.save({ render });
-          app.relaunch();
-          app.quit();
-        },
-      })),
+      label: t.compact || 'Modo compacto (Widget)',
+      accelerator: 'Ctrl+Alt+V',
+      type: 'checkbox',
+      checked: Boolean(cfg.compact),
+      click: (item) => toggleCompact(item.checked),
     },
     {
-      label: t.theme || 'Estilo de sus ventanas',
-      submenu: [
-        { label: 'Night City', type: 'radio', checked: (cfg.theme || 'nightcity') === 'nightcity', click: () => updateConfig({ theme: 'nightcity' }) },
-        { label: t.themeClassic || 'Clásico (Classique)', type: 'radio', checked: cfg.theme === 'classic', click: () => updateConfig({ theme: 'classic' }) },
-      ],
-    },
-    { label: t.wander, type: 'checkbox', checked: cfg.wander, click: (item) => updateConfig({ wander: item.checked }) },
-    { label: t.possess, type: 'checkbox', checked: cfg.possess, click: (item) => updateConfig({ possess: item.checked }) },
-
-    {
-      label: t.startup,
+      label: t.startup || 'Iniciar al encender el sistema',
       type: 'checkbox',
       checked: app.getLoginItemSettings(loginItemOptions()).openAtLogin,
       click: (item) => app.setLoginItemSettings({ ...loginItemOptions(), openAtLogin: item.checked }),
     },
     { type: 'separator' },
-    { label: t.quit, click: () => app.quit() },
-  );
+    {
+      label: t.soundsDir || 'Abrir carpeta de sonidos propios',
+      click: () => {
+        fs.mkdirSync(userSoundsDir(), { recursive: true });
+        shell.openPath(userSoundsDir());
+      },
+    },
+    {
+      label: 'Olvidar memoria de chat',
+      click: () => {
+        saveMemory({ history: [] });
+        overlay?.webContents.send('chat:forget');
+      },
+    },
+  ];
+
+  const menuItems = [
+    { label: t.chat || 'Hablar con Capri', click: () => sendCommand('chat') },
+    { label: t.voiceRec || 'Reconocimiento por voz', accelerator: 'Ctrl+Alt+M', click: () => sendCommand('voice') },
+    { label: t.scanScreen || 'Analizar pantalla', click: () => sendCommand('look') },
+    {
+      label: t.commands || 'Comandos rápidos',
+      submenu: commands.listCommands().map((cmd) => ({
+        label: cmd.label,
+        click: () => commands.runCommand(cmd.id),
+      })),
+    },
+    { type: 'separator' },
+    { label: t.teleport || 'Teletransportar', accelerator: 'Ctrl+Alt+T', click: () => sendCommand('teleport') },
+    { label: t.sleep || 'Dormir / Despertar', click: () => sendCommand('sleep') },
+    { label: cfg.visible ? (t.hide || 'Guardar en biochip') : (t.show || 'Sacar del biochip'), accelerator: 'Ctrl+Alt+C', click: () => toggleVisible() },
+    { type: 'separator' },
+    {
+      label: t.settings || 'Preferencias',
+      submenu: preferencesSubmenu,
+    },
+    { type: 'separator' },
+    { label: t.quit || 'Salir', click: () => app.quit() },
+  ];
 
   const menu = Menu.buildFromTemplate(menuItems);
 
@@ -778,6 +735,42 @@ function registerIpc() {
     }
   });
   ipcMain.handle('windows:closePage', (_e, { id, key }) => windowWatch?.close?.(id, key) ?? 'gone');
+  ipcMain.handle('panel:copy', async (_e, rect) => {
+    if (!overlay || overlay.isDestroyed()) return false;
+    try {
+      const bounds = overlay.getBounds();
+      const captureRect = rect ? {
+        x: Math.max(0, Math.min(bounds.width, Math.round(rect.x))),
+        y: Math.max(0, Math.min(bounds.height, Math.round(rect.y))),
+        width: Math.max(1, Math.min(bounds.width - Math.round(rect.x), Math.round(rect.width))),
+        height: Math.max(1, Math.min(bounds.height - Math.round(rect.y), Math.round(rect.height))),
+      } : undefined;
+
+      const image = await overlay.webContents.capturePage(captureRect);
+      if (!image || image.isEmpty()) {
+        console.warn('[capri] capturePage devolvió imagen vacía');
+        return false;
+      }
+
+      clipboard.writeImage(image);
+
+      if (process.platform === 'linux') {
+        try {
+          const pngBuffer = image.toPNG();
+          const { spawn } = require('node:child_process');
+          const wl = spawn('wl-copy', ['--type', 'image/png'], { stdio: ['pipe', 'ignore', 'ignore'] });
+          wl.stdin.write(pngBuffer);
+          wl.stdin.end();
+          wl.on('error', () => {});
+        } catch {}
+      }
+
+      return true;
+    } catch (err) {
+      console.error('[capri] Error copiando imagen al portapapeles:', err);
+      return false;
+    }
+  });
   let cpuBefore = null;
   ipcMain.handle('pc:cpu', () => {
     const now = os.cpus().map(({ times: t }) => ({ idle: t.idle, total: t.user + t.nice + t.sys + t.idle + t.irq }));
@@ -801,6 +794,11 @@ function registerIpc() {
     const url = typeof req === 'string' ? req : req?.url;
     const browser = typeof req === 'object' ? req.browser : null;
     return launcher.openUrl(url, browser);
+  });
+  ipcMain.handle('apps:youtube', async (_e, query) => {
+    const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+    const ok = await launcher.openUrl(url);
+    return ok ? { title: query } : null;
   });
   ipcMain.handle('files:open', async (_e, { file, reveal }) => {
     try {

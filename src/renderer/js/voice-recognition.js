@@ -1,6 +1,6 @@
 // Reconocimiento de voz y comandos hablados para Capri.
-// Utiliza Web Speech API en primer lugar (si está disponible y online)
-// y captura por micrófono con codificación WAV + IA multimodal (Gemini) como fallback robusto.
+// Soporta modo de escucha continua (Hotword / Wake Word "Capri") como Jarvis o Google Assistant,
+// además de comandos por pulsación directa y transcripción multimodal rápida con Gemini.
 
 function encodeWav(samples, sampleRate) {
   const buffer = new ArrayBuffer(44 + samples.length * 2);
@@ -18,11 +18,11 @@ function encodeWav(samples, sampleRate) {
   writeString(12, 'fmt ');
   view.setUint32(16, 16, true);
   view.setUint16(20, 1, true); // 1 = PCM uncompressed
-  view.setUint16(22, 1, true); // 1 channel (mono)
+  view.setUint16(22, 1, true); // 1 canal (mono)
   view.setUint32(24, sampleRate, true);
   view.setUint32(28, sampleRate * 2, true); // Byte rate
   view.setUint16(32, 2, true); // Block align
-  view.setUint16(34, 16, true); // 16 bits per sample
+  view.setUint16(34, 16, true); // 16 bits por muestra
   writeString(36, 'data');
   view.setUint32(40, samples.length * 2, true);
 
@@ -35,20 +35,44 @@ function encodeWav(samples, sampleRate) {
   return new Blob([buffer], { type: 'audio/wav' });
 }
 
+function blobToBase64(blob) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const dataUrl = reader.result;
+      const base64 = typeof dataUrl === 'string' ? dataUrl.split(',')[1] : null;
+      resolve(base64);
+    };
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(blob);
+  });
+}
+
+// Regex para detectar "Capri" al inicio o en la frase
+const WAKE_WORD_RE = /^(?:(?:oye|hey|ok|hola|eh|ey)\s+)?(?:capri|capry|cabri|kapri|capre)\b[,:\s-]*(.*)/i;
+const EMBEDDED_CAPRI_RE = /\b(?:capri|capry|cabri|kapri|capre)\b[,:\s-]*(.*)/i;
+
 export class VoiceRecognition {
   constructor(host) {
     this.host = host;
     this.active = false;
+    this.alwaysOn = false;
+    this.isPaused = false;
+    this.waitingForFollowup = false;
+    this.followupTimer = null;
+
     this.recognition = null;
     this.audioStream = null;
     this.audioContext = null;
     this.processor = null;
+
     this.recordedSamples = [];
-    this.silenceTimer = null;
-    this.maxTimer = null;
-    this.hasDetectedSpeech = false;
-    this.mode = null;
+    this.isSpeaking = false;
+    this.silenceTicks = 0;
+    this.isTranscribing = false;
+
     this.callbacks = null;
+    this.mode = null; // 'speech-api' | 'audio-record'
   }
 
   isSupported() {
@@ -58,44 +82,105 @@ export class VoiceRecognition {
     );
   }
 
-  async start({ onInterim, onResult, onError, onStateChange, lang = 'es-ES' } = {}) {
-    if (this.active) {
-      this.stop();
-      return;
+  // Inicia el modo de escucha continua tipo Jarvis (Wake Word "Capri")
+  async startContinuous({ onWakeWord, onSpeechStateChange, onInterim, onError, lang = 'es-ES' } = {}) {
+    this.alwaysOn = true;
+    this.isPaused = false;
+    this.callbacks = {
+      ...this.callbacks,
+      onWakeWord,
+      onSpeechStateChange,
+      onInterim,
+      onError,
+      lang,
+    };
+
+    if (this.active) return;
+    await this.initStream();
+  }
+
+  pauseContinuous() {
+    this.isPaused = true;
+    this.waitingForFollowup = false;
+    this.clearFollowupTimer();
+    this.callbacks?.onSpeechStateChange?.(false);
+  }
+
+  resumeContinuous() {
+    this.isPaused = false;
+    if (!this.active) {
+      this.initStream();
     }
+  }
 
-    this.active = true;
-    this.callbacks = { onInterim, onResult, onError, onStateChange };
-    this.recordedSamples = [];
-    this.hasDetectedSpeech = false;
-    onStateChange?.(true);
+  toggleContinuous() {
+    if (!this.alwaysOn) {
+      this.startContinuous(this.callbacks || {});
+      return true;
+    }
+    if (this.isPaused) {
+      this.resumeContinuous();
+      return true;
+    }
+    this.pauseContinuous();
+    return false;
+  }
 
+  // Pone a Capri a escuchar directamente la orden sin necesidad de decir "Capri" primero
+  triggerDirectListen(timeoutMs = 8000) {
+    this.waitingForFollowup = true;
+    this.clearFollowupTimer();
+    this.followupTimer = setTimeout(() => {
+      this.waitingForFollowup = false;
+      this.callbacks?.onFollowupTimeout?.();
+    }, timeoutMs);
+  }
+
+  clearFollowupTimer() {
+    if (this.followupTimer) {
+      clearTimeout(this.followupTimer);
+      this.followupTimer = null;
+    }
+  }
+
+  // Inicializa el flujo de micrófono (WebSpeech API o getUserMedia + VAD)
+  async initStream() {
+    if (this.active) return;
     const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-    // Intentar Web Speech API primero
     if (SpeechRec) {
       try {
         let gotResult = false;
         let fallbackTriggered = false;
 
         const rec = new SpeechRec();
-        rec.lang = lang;
-        rec.continuous = false;
+        rec.lang = this.callbacks?.lang || 'es-ES';
+        rec.continuous = true;
         rec.interimResults = true;
         rec.maxAlternatives = 1;
 
         rec.onresult = (event) => {
+          if (this.isPaused) return;
           gotResult = true;
           let interim = '';
           let final = '';
+
           for (let i = event.resultIndex; i < event.results.length; ++i) {
             const item = event.results[i];
             const text = item[0]?.transcript || '';
             if (item.isFinal) final += text;
             else interim += text;
           }
-          if (interim) onInterim?.(interim);
-          if (final) onResult?.(final.trim());
+
+          if (interim) {
+            this.callbacks?.onInterim?.(interim);
+            this.callbacks?.onSpeechStateChange?.(true);
+          }
+
+          if (final) {
+            this.callbacks?.onSpeechStateChange?.(false);
+            this.handleTranscription(final.trim());
+          }
         };
 
         rec.onerror = async (err) => {
@@ -107,24 +192,23 @@ export class VoiceRecognition {
             await this.startAudioFallback();
             return;
           }
-          if (!fallbackTriggered) {
-            onError?.(err.error || 'error');
-            this.cleanup();
-          }
         };
 
         rec.onend = () => {
-          if (!fallbackTriggered) {
-            this.cleanup();
+          if (this.alwaysOn && !this.isPaused && !fallbackTriggered) {
+            try { rec.start(); } catch {}
+          } else if (!fallbackTriggered) {
+            this.active = false;
           }
         };
 
         this.recognition = rec;
         this.mode = 'speech-api';
+        this.active = true;
         rec.start();
         return;
       } catch (err) {
-        console.warn('[capri:voice] fallo WebSpeech, usando fallback:', err);
+        console.warn('[capri:voice] Fallo inicializando WebSpeech, usando fallback VAD:', err);
       }
     }
 
@@ -132,18 +216,14 @@ export class VoiceRecognition {
   }
 
   async startAudioFallback() {
-    const { onInterim, onError } = this.callbacks || {};
-
     if (!navigator.mediaDevices?.getUserMedia) {
-      onError?.('no_mic_support');
+      this.callbacks?.onError?.('no_mic_support');
       this.cleanup();
       return;
     }
 
     try {
       this.mode = 'audio-record';
-      onInterim?.('🎙️ Escuchando...');
-
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
@@ -155,6 +235,8 @@ export class VoiceRecognition {
 
       this.audioStream = stream;
       this.recordedSamples = [];
+      this.isSpeaking = false;
+      this.silenceTicks = 0;
 
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       const audioCtx = new AudioCtx({ sampleRate: 16000 });
@@ -165,13 +247,9 @@ export class VoiceRecognition {
       const processor = audioCtx.createScriptProcessor(4096, 1, 1);
       this.processor = processor;
 
-      let silenceTicks = 0;
-
       processor.onaudioprocess = (e) => {
-        if (!this.active || this.mode !== 'audio-record') return;
+        if (!this.active || this.isPaused || this.mode !== 'audio-record') return;
         const channelData = e.inputBuffer.getChannelData(0);
-        // Clonar datos de audio
-        this.recordedSamples.push(new Float32Array(channelData));
 
         // Calcular volumen RMS
         let sum = 0;
@@ -180,128 +258,192 @@ export class VoiceRecognition {
         }
         const rms = Math.sqrt(sum / channelData.length);
 
-        if (rms > 0.02) {
-          this.hasDetectedSpeech = true;
-          silenceTicks = 0;
-        } else if (this.hasDetectedSpeech) {
-          silenceTicks++;
-          // ~1.5 segundos de silencio tras hablar (6 ticks a ~256ms)
-          if (silenceTicks >= 6) {
-            this.stop();
+        const SPEECH_THRESHOLD = 0.018;
+
+        if (rms > SPEECH_THRESHOLD) {
+          if (!this.isSpeaking) {
+            this.isSpeaking = true;
+            this.callbacks?.onSpeechStateChange?.(true);
+          }
+          this.silenceTicks = 0;
+          this.recordedSamples.push(new Float32Array(channelData));
+        } else if (this.isSpeaking) {
+          this.silenceTicks++;
+          this.recordedSamples.push(new Float32Array(channelData));
+
+          // ~760ms de silencio tras hablar (3 ticks a ~256ms)
+          if (this.silenceTicks >= 3) {
+            this.isSpeaking = false;
+            this.silenceTicks = 0;
+            this.callbacks?.onSpeechStateChange?.(false);
+
+            const chunks = this.recordedSamples;
+            this.recordedSamples = [];
+
+            // Procesar si supera ~0.38s de audio mínimo (6000 muestras)
+            let totalLen = 0;
+            for (const c of chunks) totalLen += c.length;
+            if (totalLen >= 6000) {
+              this.processRecordedSpeech(chunks, totalLen);
+            }
           }
         }
       };
 
       source.connect(processor);
       processor.connect(audioCtx.destination);
-
-      // Tiempo límite máximo de 12 segundos
-      this.maxTimer = setTimeout(() => {
-        if (this.active) this.stop();
-      }, 12000);
+      this.active = true;
+      console.log('[capri:voice] Micrófono siempre activo (Continuous Wake Word "Capri" listo).');
     } catch (err) {
       console.error('[capri:voice] Error accediendo al micrófono:', err);
-      onError?.(err.name || 'permission_denied');
+      this.callbacks?.onError?.(err.name || 'permission_denied');
       this.cleanup();
     }
   }
 
-  async stop() {
-    if (!this.active) return;
+  async processRecordedSpeech(chunks, totalLength) {
+    if (this.isTranscribing) return;
+    this.isTranscribing = true;
 
-    if (this.recognition) {
-      try { this.recognition.stop(); } catch {}
-      return;
-    }
-
-    if (this.mode === 'audio-record') {
-      const { onInterim, onResult, onError } = this.callbacks || {};
-      onInterim?.('⏳ Transcribiendo...');
-
-      // Desconectar procesador
-      if (this.processor) {
-        this.processor.disconnect();
-        this.processor = null;
-      }
-
-      // Fusionar muestras registradas
-      let totalLength = 0;
-      for (const chunk of this.recordedSamples) {
-        totalLength += chunk.length;
-      }
-
-      if (totalLength < 4000) { // menos de 0.25s
-        this.cleanup();
-        return;
-      }
-
+    try {
       const merged = new Float32Array(totalLength);
       let offset = 0;
-      for (const chunk of this.recordedSamples) {
+      for (const chunk of chunks) {
         merged.set(chunk, offset);
         offset += chunk.length;
       }
 
       const sampleRate = this.audioContext?.sampleRate || 16000;
       const wavBlob = encodeWav(merged, sampleRate);
+      const base64 = await blobToBase64(wavBlob);
 
-      try {
-        const reader = new FileReader();
-        reader.readAsDataURL(wavBlob);
-        reader.onloadend = async () => {
-          const dataUrl = reader.result;
-          const base64 = typeof dataUrl === 'string' ? dataUrl.split(',')[1] : null;
+      if (!base64) return;
 
-          if (!base64) {
-            this.cleanup();
-            return;
-          }
-
-          const res = await this.host.transcribeAudio({ base64, mimeType: 'audio/wav' });
-          if (res?.ok && res.text && res.text.trim()) {
-            onResult?.(res.text.trim());
-          } else if (!res?.ok && res?.error) {
-            console.warn('[capri:voice] Transcripción error:', res.error);
-            onError?.(res.error);
-          }
-          this.cleanup();
-        };
-      } catch (err) {
-        console.error('[capri:voice] Fallo procesando WAV:', err);
-        onError?.(err.message);
-        this.cleanup();
+      const res = await this.host.transcribeAudio({ base64, mimeType: 'audio/wav' });
+      if (res?.ok && res.text && res.text.trim()) {
+        this.handleTranscription(res.text.trim());
       }
+    } catch (err) {
+      console.warn('[capri:voice] Error procesando transcripción:', err.message);
+    } finally {
+      this.isTranscribing = false;
     }
   }
 
-  cancel() {
-    this.recordedSamples = [];
-    if (this.recognition) {
-      try { this.recognition.abort(); } catch {}
+  // Maneja el texto transcrito y aplica la lógica de activación por palabra clave "Capri"
+  handleTranscription(rawText) {
+    const text = String(rawText || '').trim();
+    if (!text) return;
+
+    console.log('[capri:voice] Escuchado:', text);
+
+    // Caso 1: Estábamos esperando la instrucción directa (se dijo "Capri" antes o se pulsó el mic)
+    if (this.waitingForFollowup) {
+      this.clearFollowupTimer();
+      this.waitingForFollowup = false;
+      this.callbacks?.onWakeWord?.({
+        fullText: text,
+        command: text,
+        isPrompt: false,
+      });
+      return;
     }
-    this.cleanup();
+
+    // Caso 2: Comprobar si la frase incluye la palabra clave "Capri"
+    const match = WAKE_WORD_RE.exec(text) || EMBEDDED_CAPRI_RE.exec(text);
+    if (match) {
+      const instruction = (match[1] || '')
+        .replace(/^[,\s:;-]+/, '')
+        .replace(/[.!?¿¡]+$/g, '')
+        .trim();
+
+      if (instruction.length >= 2) {
+        // Ejemplo: "Capri ejecuta docker ps" o "Capri abre brave"
+        this.clearFollowupTimer();
+        this.callbacks?.onWakeWord?.({
+          fullText: text,
+          command: instruction,
+          isPrompt: false,
+        });
+      } else {
+        // Solo dijo "Capri" -> despierta y espera la orden
+        this.waitingForFollowup = true;
+        this.clearFollowupTimer();
+        this.followupTimer = setTimeout(() => {
+          this.waitingForFollowup = false;
+          this.callbacks?.onFollowupTimeout?.();
+        }, 8000);
+
+        this.callbacks?.onWakeWord?.({
+          fullText: text,
+          command: '',
+          isPrompt: true,
+        });
+      }
+      return;
+    }
+
+    // Caso 3: Charla ajena o ruido que no menciona "Capri": se ignora completamente
+  }
+
+  // Método legado / directo para pulsación única de botón
+  async start({ onInterim, onResult, onError, onStateChange, lang = 'es-ES' } = {}) {
+    if (this.alwaysOn && !this.isPaused) {
+      // Si la escucha continua ya está corriendo, entrar directamente a escuchar la orden
+      this.triggerDirectListen();
+      onStateChange?.(true);
+      return;
+    }
+
+    this.callbacks = { ...this.callbacks, onInterim, onResult, onError, onStateChange, lang };
+    await this.startContinuous({
+      onWakeWord: ({ command }) => {
+        if (command) onResult?.(command);
+      },
+      onSpeechStateChange: onStateChange,
+      onInterim,
+      onError,
+      lang,
+    });
+  }
+
+  stop() {
+    this.waitingForFollowup = false;
+    this.clearFollowupTimer();
+    this.callbacks?.onSpeechStateChange?.(false);
+  }
+
+  cancel() {
+    this.stop();
   }
 
   cleanup() {
     this.active = false;
-    this.recognition = null;
-    this.mode = null;
-    if (this.maxTimer) {
-      clearTimeout(this.maxTimer);
-      this.maxTimer = null;
+    this.waitingForFollowup = false;
+    this.clearFollowupTimer();
+
+    if (this.recognition) {
+      try { this.recognition.abort(); } catch {}
+      this.recognition = null;
     }
+
     if (this.processor) {
-      this.processor.disconnect();
+      try { this.processor.disconnect(); } catch {}
       this.processor = null;
     }
+
     if (this.audioStream) {
-      this.audioStream.getTracks().forEach((track) => track.stop());
+      try {
+        this.audioStream.getTracks().forEach((track) => track.stop());
+      } catch {}
       this.audioStream = null;
     }
+
     if (this.audioContext && this.audioContext.state !== 'closed') {
       try { this.audioContext.close(); } catch {}
       this.audioContext = null;
     }
-    this.callbacks?.onStateChange?.(false);
+
+    this.callbacks?.onSpeechStateChange?.(false);
   }
 }
