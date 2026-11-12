@@ -81,6 +81,28 @@ async function info(what) {
     }
   }
   if (what === 'ram') return { total: os.totalmem(), used: os.totalmem() - os.freemem() };
+  if (what === 'heavy') {
+    if (LINUX) {
+      const out = await runCmd('ps -eo pid,%cpu,%mem,comm --sort=-%cpu');
+      if (!out) return null;
+      const lines = out.trim().split('\n').slice(1);
+      const procs = [];
+      for (const line of lines) {
+        const parts = line.trim().split(/\s+/);
+        if (parts.length >= 4) {
+          const pid = parseInt(parts[0], 10);
+          const cpu = parseFloat(parts[1]);
+          const mem = parseFloat(parts[2]);
+          const name = parts.slice(3).join(' ');
+          if (name === 'ps' || name.startsWith('kworker') || pid === process.pid) continue;
+          procs.push({ pid, name, cpu, mem });
+          if (procs.length >= 4) break;
+        }
+      }
+      return { procs, ram: { total: os.totalmem(), used: os.totalmem() - os.freemem() } };
+    }
+    return null;
+  }
   if (what === 'ip') {
     const local = Object.entries(os.networkInterfaces())
       .filter(([name]) => !/virtual|vethernet|vmware|loopback|vbox|wsl|hyper-v|tailscale|docker/i.test(name))

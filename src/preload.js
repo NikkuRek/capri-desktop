@@ -52,6 +52,7 @@ contextBridge.exposeInMainWorld('host', {
   lookSay: (request) => ipcRenderer.invoke('look:say', request),
   lookWhere: () => ipcRenderer.invoke('look:where'),
   onLook: on('look:now'),
+  pcIdle: () => ipcRenderer.invoke('pc:idle'),
   cpu: () => ipcRenderer.invoke('pc:cpu'),
   pcDo: (req) => ipcRenderer.invoke('pc:do', req),
   openOllama: () => ipcRenderer.send('chat:ollama'),
@@ -78,6 +79,7 @@ contextBridge.exposeInMainWorld('host', {
   openFile: (file, reveal) => ipcRenderer.invoke('files:open', { file, reveal }),
   screenshot: () => ipcRenderer.invoke('files:screenshot'),
   webSearch: (query) => ipcRenderer.invoke('web:search', query),
+  generateTasks: (req) => ipcRenderer.invoke('tasks:generate', req),
   openSite: (address, browser) => ipcRenderer.invoke('apps:site', typeof address === 'object' ? address : { url: address, browser }),
   focusOverlay: (focused) => ipcRenderer.send('overlay:focus', Boolean(focused)),
 });

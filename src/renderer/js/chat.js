@@ -33,8 +33,10 @@ const TAG = /\[\[\s*(open|music|media|site|run|cmd)\s*:\s*([^\]]*)\]\]/i;
 // "open", "launch", "ouvre", "lance", "abre", "открой"... in any of her languages
 const OPEN_ASK = /\b(open|launch|start|run|exec)\b|ouvr|lance|démarre|abre|abrir|inicia|iniciar|ejecuta|ejecutar|corre|correr|executa|открой|запусти/i;
 const DEV_ASK = /\b(?:agy|antigravity|proyectos?|wofi)\b/i;
-const ACTION_ASK = /\b(?:actualiza|actualizar|update|upgrade|conecta|conectar|connect|desconecta|desconectar|limpia|limpiar|optimiza|optimizar|rdp|tailscale|lazygit|yazi|fastfetch|btop|htop|neovim|nvim|cachy|cachyos)\b/i;
+const ACTION_ASK = /\b(?:actualiza|actualizar|update|upgrade|conecta|conectar|connect|desconecta|desconectar|limpia|limpiar|limpieza|libera|liberar|prune|optimiza|optimizar|rdp|tailscale|lazygit|yazi|fastfetch|btop|htop|neovim|nvim|cachy|cachyos)\b/i;
 const AI_CMD_ASK = /^(?:ejecuta|corre|exec|run|comando|terminal)\s*[:]/i;
+const TASKS_MD_ASK = /(?:crea|haz|genera|escribe|crear|hacer|generar|guarda|guardar)\s+(?:un\s+)?(?:documento|archivo|lista)?\s*(?:md|markdown|de\s+tareas|con\s+las?\s+tareas?|tasks?)/i;
+const TASKS_MD_SHORT = /(?:documento|archivo)\s+md|lista\s+de\s+tareas|(?:tareas?|tasks?)\s+en\s+md/i;
 // what to do with the music playing, said plainly (only when it's about music, or said in a few words)
 const MEDIA_ASK = [
   ['pause', /\b(pause|pausa|pausar)\b|stop (the )?music|arrête la musique|пауз/i],
@@ -99,6 +101,7 @@ const INFO_ASK = [
   ['disk', /disque|\bdisk\b|\bdrive\b|stockage|storage|espace (?:libre|disque|restant)|de (?:la )?place|space left|free space|espacio|\bdisco\b|espa[çc]o|диск|места/i],
   ['ram', /\bram\b|m[ée]moire|memory|memoria|mem[óo]ria|памят|озу/i],
   ['ip', /\bip\b|айпи/i],
+  ['heavy', /lento|pesado|consum(?:e|iendo)|procesos?|qu[eé]\s+consume|por\s+qu[eé]\s+(?:va|est[aá])\s+lento|diagn[oó]stico/i],
 ];
 const QUESTION = /\?|combien|\bquel(?:le)?\b|c['’]est quoi|\breste\b|how much|how many|what(?:'s| is)|\bleft\b|cu[aá]nt|\bqu[eé]\b|quanto|\bqual\b|сколько|как(?:ой|ая|ое)|осталось/i;
 // its sound: "mets le son à 30 %", "volume 50"; off and back on
@@ -492,9 +495,9 @@ export class Chat {
     const asked = this.agent ? null : this.asked(text);
     if (asked?.kind === 'look') return this.sendLook(text, id);
     const early = asked && asked.kind !== 'close' ? this.doNow(asked) : null;
-    if (early && ['open', 'pc', 'media', 'files', 'shot', 'youtube', 'music', 'play', 'web'].includes(asked?.kind)) {
+    if (early && ['open', 'pc', 'media', 'files', 'shot', 'youtube', 'music', 'play', 'web', 'tasks_md'].includes(asked?.kind)) {
       const done = await early;
-      if (done && (done.line || done.offer || done.confirm || done.files || done.reminder)) {
+      if (done && (done.line || done.offer || done.confirm || done.files || done.reminder || done.fileResult)) {
         this.turn = 0;
         this.panel.setChatBusy(false);
         this.after('', '…', asked, Promise.resolve(done), text);
@@ -660,6 +663,7 @@ export class Chat {
     if (after && !VAGUE_SONG.test(after) && !HER_PICK.test(after)) return { kind: 'play', song: songOf(after.replace(/[\s.!?]+$/, '')), before: text.trim().slice(0, both.index) };
     const play = PLAY_ASK.exec(text.trim())?.[1];
     if (play && !VAGUE_SONG.test(play) && !HER_PICK.test(play)) return { kind: 'play', song: songOf(play.replace(/[\s.!?]+$/, '')) };
+    if (TASKS_MD_ASK.test(text) || TASKS_MD_SHORT.test(text)) return { kind: 'tasks_md', text };
     if (AI_CMD_ASK.test(text) && count <= 30) return { kind: 'open', text };
     if ((OPEN_ASK.test(text) || DEV_ASK.test(text) || ACTION_ASK.test(text)) && count <= 18) return { kind: 'open', text };
     return null;
@@ -724,6 +728,12 @@ export class Chat {
         if (asked.info === 'battery') {
           if (r.none) return { line: t.noBattery, face: 'look' };
           return { line: fmt(r.charging ? t.charging : t.battery, { percent: r.percent }), face: r.percent < 20 && !r.charging ? 'wide' : 'look' };
+        }
+        if (asked.info === 'heavy') {
+          if (!r.procs || !r.procs.length) return { line: 'No detecto procesos consumiendo recursos anormales.', face: 'smug' };
+          const procsText = r.procs.map((p) => `- ${p.name} (PID ${p.pid}): ${p.cpu}% CPU | ${p.mem}% RAM`).join('\n');
+          const ramText = r.ram ? `\nRAM usada: ${gb(r.ram.used)} / ${gb(r.ram.total)}` : '';
+          return { line: `Procesos con mayor consumo ahora mismo:\n${procsText}${ramText}`, face: 'look' };
         }
         if (asked.info === 'disk') return { line: fmt(t.disk, { free: gb(r.free), total: gb(r.total), drive: r.drive }), face: 'look' };
         if (asked.info === 'ram') return { line: fmt(t.ram, { used: gb(r.used), total: gb(r.total) }), face: 'look' };
@@ -889,6 +899,17 @@ export class Chat {
       this.voice.play('tick');
       return shot ? { line: fmt(t.shot, { name: shot.name }), face: 'smug', files: [shot] } : null;
     }
+    if (asked.kind === 'tasks_md') {
+      this.zap();
+      this.panel.stream('Generando documento de tareas en Markdown...', { done: true });
+      const res = await this.host.generateTasks({ text: asked.text });
+      if (!res || !res.ok) {
+        return { line: `No se pudo generar el documento: ${res?.error || 'error desconocido'}`, face: 'aside' };
+      }
+      const where = res.project ? `en el proyecto ${res.project}` : 'en la carpeta dev/tareas';
+      const line = `Documento de tareas generado ${where}:\n${res.filename}\n(${res.linesCount} lineas)`;
+      return { line, face: 'smug', fileResult: res };
+    }
     if (asked.kind === 'play') {
       // what came before an "and" first ("ouvre discord et…"), unless it's YouTube, where the song goes anyway
       const first = asked.before && OPEN_ASK.test(asked.before) && !/youtube/i.test(asked.before)
@@ -972,6 +993,19 @@ export class Chat {
       this.panel.setActions(actions, (id) => {
         if (id === 'folder') return this.host.openFile(first.path, true);
         return this.host.openFile((id === 'second' ? second : first).path);
+      });
+      return undefined;
+    }
+    if (done?.fileResult) {
+      this.addLine(answer, done.line, done.face);
+      const res = done.fileResult;
+      const actions = [
+        { id: 'open', label: 'Abrir archivo', primary: true },
+        { id: 'folder', label: 'Ver carpeta' },
+      ];
+      this.panel.setActions(actions, (id) => {
+        if (id === 'folder') return this.host.openFile(res.path, true);
+        return this.host.openFile(res.path);
       });
       return undefined;
     }

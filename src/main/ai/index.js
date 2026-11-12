@@ -30,13 +30,13 @@ async function status(cfg = {}) {
   try {
     const list = await ollama.models();
     if (!list.length) {
-      return { ok: false, provider: 'ollama', error: 'no_model', model: 'llama3' };
+      return { ok: false, provider: 'ollama', error: 'no_model', model: 'llama3.2:1b' };
     }
-    const chosen = list.find((m) => m.startsWith('llama3')) || list[0];
+    const chosen = list.find((m) => m.includes('1b')) || list.find((m) => m.startsWith('llama3.2')) || list[0];
     ollama.warm(chosen);
     return { ok: true, provider: 'ollama', model: chosen, list };
   } catch (err) {
-    return { ok: false, provider: 'ollama', error: 'offline', message: err.message, model: 'llama3' };
+    return { ok: false, provider: 'ollama', error: 'offline', message: err.message, model: 'llama3.2:1b' };
   }
 }
 
@@ -53,9 +53,9 @@ async function chat({ messages, provider: reqProvider, model }, onDelta, signal)
 function warmOllama() {
   ollama.models().then((list) => {
     if (list && list.length) {
-      const chosen = list.find((m) => m.startsWith('llama3')) || list[0];
+      const chosen = list.find((m) => m.includes('1b')) || list.find((m) => m.startsWith('llama3.2')) || list[0];
       ollama.warm(chosen);
-      console.log(`[capri:ollama] Modelo ${chosen} precargado en memoria (keep_alive permanente).`);
+      console.log(`[capri:ollama] Modelo liviano ${chosen} inicializado.`);
     }
   }).catch(() => {});
 }

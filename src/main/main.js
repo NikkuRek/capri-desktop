@@ -5,7 +5,7 @@ const os = require('node:os');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const {
-  app, BrowserWindow, Tray, Menu, ipcMain, screen, protocol, net, shell, globalShortcut, nativeImage, session, clipboard,
+  app, BrowserWindow, Tray, Menu, ipcMain, screen, protocol, net, shell, globalShortcut, nativeImage, session, clipboard, powerMonitor,
 } = require('electron');
 
 app.commandLine.appendSwitch('remote-debugging-port', '9222');
@@ -29,6 +29,7 @@ const { loadEnv } = require('./env');
 const ai = require('./ai');
 const apps = require('./apps');
 const system = require('./system');
+const tasks = require('./tasks');
 const { createBridge } = require('./bridge');
 
 const ROOT = path.resolve(__dirname, '..', '..');
@@ -538,6 +539,12 @@ function rebuildTray() {
       checked: app.getLoginItemSettings(loginItemOptions()).openAtLogin,
       click: (item) => app.setLoginItemSettings({ ...loginItemOptions(), openAtLogin: item.checked }),
     },
+    {
+      label: 'Recordar pausas de salud',
+      type: 'checkbox',
+      checked: cfg.breaks !== false,
+      click: (item) => updateConfig({ breaks: item.checked }),
+    },
     { type: 'separator' },
     {
       label: t.soundsDir || 'Abrir carpeta de sonidos propios',
@@ -771,6 +778,13 @@ function registerIpc() {
       return false;
     }
   });
+  ipcMain.handle('pc:idle', () => {
+    try {
+      return powerMonitor.getSystemIdleTime();
+    } catch {
+      return 0;
+    }
+  });
   let cpuBefore = null;
   ipcMain.handle('pc:cpu', () => {
     const now = os.cpus().map(({ times: t }) => ({ idle: t.idle, total: t.user + t.nice + t.sys + t.idle + t.irq }));
@@ -809,6 +823,7 @@ function registerIpc() {
       return false;
     }
   });
+  ipcMain.handle('tasks:generate', async (_e, req) => tasks.generateTasksMd(req));
 }
 
 function main() {

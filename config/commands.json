@@ -70,6 +70,87 @@
       ],
       "description": "Elimina dependencias huérfanas y paquetes en desuso"
     },
+    "docker-cleanup": {
+      "id": "docker-cleanup",
+      "label": "Limpieza de Docker (Contenedores e Imágenes)",
+      "command": "docker system prune -f",
+      "args": [],
+      "inTerminal": true,
+      "aliases": [
+        "limpia docker",
+        "limpiar docker",
+        "docker prune",
+        "docker cleanup",
+        "limpieza docker"
+      ],
+      "description": "Elimina contenedores detenidos, redes en desuso e imágenes dangling de Docker"
+    },
+    "pacman-cleanup": {
+      "id": "pacman-cleanup",
+      "label": "Limpieza de Caché de Pacman y AUR",
+      "command": "sudo pacman -Sc --noconfirm && yay -Sc --noconfirm",
+      "args": [],
+      "inTerminal": true,
+      "aliases": [
+        "limpia pacman",
+        "limpiar pacman",
+        "limpia aur",
+        "limpia yay",
+        "limpiar cache pacman",
+        "limpiar cache yay"
+      ],
+      "description": "Limpia la caché de paquetes descargados de Pacman y repositorios AUR"
+    },
+    "flatpak-cleanup": {
+      "id": "flatpak-cleanup",
+      "label": "Limpieza de Runtimes Huérfanos de Flatpak",
+      "command": "flatpak uninstall --unused -y",
+      "args": [],
+      "inTerminal": true,
+      "aliases": [
+        "limpia flatpak",
+        "limpiar flatpak",
+        "flatpak cleanup",
+        "limpiar flatpaks"
+      ],
+      "description": "Desinstala dependencias y runtimes sin usar de aplicaciones Flatpak"
+    },
+    "dev-node-cleanup": {
+      "id": "dev-node-cleanup",
+      "label": "Limpieza de node_modules Antiguos en Proyectos Dev",
+      "command": "bash -c 'echo \"Buscando node_modules con más de 30 días de inactividad en dev...\"; find /run/media/nikkurek/FILES/dev -maxdepth 3 -name \"node_modules\" -type d -mtime +30 -prune -exec du -sh {} +; echo \"\"; read -p \"¿Deseas eliminar estos node_modules? (s/N): \" c; if [[ \"$c\" =~ ^[sS]$ ]]; then find /run/media/nikkurek/FILES/dev -maxdepth 3 -name \"node_modules\" -type d -mtime +30 -prune -exec rm -rf {} + && echo \"Limpieza completada.\"; else echo \"Cancelado.\"; fi'",
+      "args": [],
+      "inTerminal": true,
+      "aliases": [
+        "limpia node modules",
+        "limpiar node modules",
+        "limpia node_modules",
+        "limpiar node_modules",
+        "limpia dependencias dev",
+        "limpiar node",
+        "limpia node"
+      ],
+      "description": "Busca y elimina carpetas node_modules no modificadas en los últimos 30 días en el directorio de desarrollo"
+    },
+    "system-full-cleanup": {
+      "id": "system-full-cleanup",
+      "label": "Limpieza Profunda de Disco",
+      "command": "bash -c 'echo \"== 1/4: Limpiando Docker ==\"; docker system prune -f; echo \"\"; echo \"== 2/4: Limpiando Flatpak ==\"; flatpak uninstall --unused -y; echo \"\"; echo \"== 3/4: Limpiando Pacman y AUR ==\"; sudo pacman -Sc --noconfirm && yay -Sc --noconfirm; echo \"\"; echo \"== 4/4: Paquetes huérfanos ==\"; h=$(pacman -Qtdq 2>/dev/null); if [ -n \"$h\" ]; then sudo pacman -Rns $h --noconfirm; else echo \"No hay paquetes huérfanos.\"; fi; echo \"\"; echo \"Limpieza profunda de sistema finalizada con éxito.\"'",
+      "args": [],
+      "inTerminal": true,
+      "aliases": [
+        "limpieza profunda",
+        "limpia el disco",
+        "libera espacio",
+        "liberar espacio",
+        "limpiar disco",
+        "limpia el sistema",
+        "limpiar sistema",
+        "deep clean",
+        "limpia todo"
+      ],
+      "description": "Ejecuta una limpieza completa de espacio en disco: Docker, Flatpak, Pacman, AUR y paquetes huérfanos"
+    },
     "pc2-rdp": {
       "id": "pc2-rdp",
       "label": "Conexión RDP a PC2 (Tailscale)",

@@ -762,6 +762,17 @@ export const LINES = {
     },
     // Windows has its animations off: she barely moves, and says so once
     motion: { line: 'Windows has its animations turned off, so I’m barely moving.', quote: 'Want me to move anyway? You can change it later in my menu › Animations.', full: 'Move!', still: 'Stay calm' },
+    breaks: {
+      time: '{h}h{m}',
+      lines: [
+        'You’ve been at it for {time} without a real break. Get up, drink some water: I’ll watch your desktop.',
+        '{time} non-stop, choom. Go stretch your legs for two minutes, your eyes will thank you.',
+        'Break time. It’s been {time}. Stretch, look out the window, hydrate: your screen will still be here.',
+      ],
+      pause: 'Taking a break', later: 'Later',
+      paused: ['Go ahead. I’ve got an eye on everything.', 'Take your time, I’m watching the place.'],
+      laterLine: 'Okay, I’ll tell you again in half an hour.',
+    },
     status: 'Claude has been working on {project} for {time}.',
     last: 'Last action: {action}',
     sessions: '{count} active sessions',
@@ -1137,6 +1148,18 @@ export const LINES = {
     },
     // Windows tiene las animaciones desactivadas: apenas se mueve, y lo dice una vez
     motion: { line: 'Windows tiene las animaciones desactivadas, así que apenas me muevo.', quote: '¿Quieres que me mueva igual? Puedes cambiarlo en mi menú › Animaciones.', full: '¡Muévete!', still: 'Quédate tranquila' },
+    // pausas de salud (breaks.js)
+    breaks: {
+      time: '{h} h {m}',
+      lines: [
+        'Llevas {time} sin una pausa de verdad. Levántate, bebe un vaso de agua: yo vigilo tu escritorio.',
+        '{time} sin parar, choom. Ve a caminar dos minutos, tus ojos te lo agradecerán.',
+        'Pausa. Ya van {time}. Estírate, mira a lo lejos, bebe agua: tu pantalla seguirá aquí.',
+      ],
+      pause: 'Me tomo una pausa', later: 'Más tarde',
+      paused: ['Ve. Yo me encargo de todo.', 'Tómate tu tiempo, yo cuido la tienda.'],
+      laterLine: 'Vale, te lo recuerdo en media hora.',
+    },
     status: 'Claude lleva {time} trabajando en {project}.',
     last: 'Última acción: {action}',
     sessions: '{count} sesiones activas',

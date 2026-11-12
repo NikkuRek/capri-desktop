@@ -12,6 +12,7 @@ import { Setup } from './setup.js';
 import { Custom } from './custom.js';
 import { Bond, Jealousy } from './bond.js';
 import { Reminders, clock } from './reminders.js';
+import { Breaks } from './breaks.js';
 import { Look } from './look.js';
 import { Pc } from './pc.js';
 import { linesFor } from './lines.js';
@@ -39,7 +40,7 @@ const SNOOZE_MS = 10 * 60 * 1000;
 const mine = (cfg) => ({ userName: cfg.userName || '', persona: cfg.persona || '', myLines: cfg.myLines || [], memories: cfg.memories || [] });
 
 async function boot() {
-  const [config, image, intro, ...cutins] = await Promise.all([
+  let [config, image, intro, ...cutins] = await Promise.all([
     host.getConfig(),
     loadImage('../../assets/capri/capri-full.png'),
     // her intro: her close-up grabbing the screen, and its drawings with her mouth and arm moving
@@ -355,6 +356,7 @@ async function boot() {
   pc.enabled = config.pcReact !== false;
   let wantsOut = config.visible !== false; // not put away in your settings (Ctrl+Alt+C, her menu)
   pc.wantsOut = () => wantsOut;
+  let breaks;
 
   // Clicking her: what's going on, or she offers to talk. Sulking, she turns her back on you.
   // About to close one of your other AIs' pages, she leaves it.
@@ -450,6 +452,8 @@ async function boot() {
   };
   const quiet = () => !capri.busy && !capri.act && !capri.dragging && !capri.stowed && !capri.dormant && !capri.hidden
     && capri.mode !== 'alert' && !chat.open && !guide.running && !panel.visible && ['stand', 'sit'].includes(capri.stance);
+  breaks = new Breaks({ host, panel, brain, capri, pc, quiet });
+  breaks.enabled = config.breaks !== false;
   setInterval(async () => {
     if (!newStage || !quiet()) return;
     const stage = newStage;
@@ -731,6 +735,7 @@ async function boot() {
     followOn = cfg.follow !== false;
     look.configure(cfg);
     pc.enabled = cfg.pcReact !== false;
+    if ('breaks' in cfg) breaks.enabled = cfg.breaks !== false;
     wantsOut = cfg.visible !== false;
     reminders.sync(cfg.reminders); // one may have been cancelled from her menu
     capri.wander = cfg.compact ? false : cfg.wander;

@@ -24,10 +24,10 @@ function getKeepAlive() {
     const num = Number(envVal);
     return isNaN(num) ? envVal : num;
   }
-  return -1; // -1 en Ollama mantiene el modelo cargado indefinidamente en memoria (cero espera en próximas aperturas)
+  return '5m'; // Se descarga automáticamente de RAM tras 5 minutos sin uso para no saturar la CPU
 }
 
-// Lista los modelos instalados en Ollama ("llama3:latest", etc.)
+// Lista los modelos instalados en Ollama ("llama3.2:1b", etc.)
 async function models() {
   const res = await fetch(`${base()}/api/tags`, { signal: AbortSignal.timeout(2500) });
   if (!res.ok) throw await failure(res);
@@ -35,9 +35,9 @@ async function models() {
   return list.map((m) => m.name);
 }
 
-// Carga previa del modelo en RAM/VRAM de forma persistente
+// Carga previa del modelo en RAM/VRAM de forma eficiente
 function warm(model) {
-  const m = model || process.env.OLLAMA_MODEL || 'llama3';
+  const m = model || process.env.OLLAMA_MODEL || 'llama3.2:1b';
   return fetch(`${base()}/api/generate`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -47,13 +47,13 @@ function warm(model) {
   });
 }
 
-// Streaming de respuesta de Ollama con persistencia permanente
+// Streaming de respuesta de Ollama con persistencia eficiente
 async function chat({ model, messages }, onDelta, signal) {
   const res = await fetch(`${base()}/api/chat`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      model: model || process.env.OLLAMA_MODEL || 'llama3',
+      model: model || process.env.OLLAMA_MODEL || 'llama3.2:1b',
       messages,
       stream: true,
       keep_alive: getKeepAlive(),

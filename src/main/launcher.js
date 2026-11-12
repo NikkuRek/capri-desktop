@@ -375,7 +375,7 @@ async function findStatic(rawText) {
   // 2. Extraer nombre eliminando verbos de apertura, acción y artículos
   let query = text
     .replace(/^(?:por\s+favor\s+|podr[ií]as\s+|quiero\s+que\s+)?/i, '')
-    .replace(/^(?:actualiza|actualizar|update|upgrade|conecta|conectar|conéctame|conectame|desconecta|desconectar|limpia|limpiar|optimiza|optimizar|abre|abrir|ábreme|abreme|inicia|iniciar|lanza|lanzar|ejecuta|ejecutar|corre|correr|open|launch|start|run)\s+/i, '')
+    .replace(/^(?:actualiza|actualizar|update|upgrade|conecta|conectar|conéctame|conectame|desconecta|desconectar|limpia|limpiar|limpieza|libera|liberar|optimiza|optimizar|abre|abrir|ábreme|abreme|inicia|iniciar|lanza|lanzar|ejecuta|ejecutar|corre|correr|open|launch|start|run)\s+/i, '')
     .replace(/^(?:la|el|los|las|un|una|mi|app|aplicaci[oó]n|programa|comando)\s+/i, '')
     .replace(/[.!?¿¡]+$/g, '')
     .trim();
