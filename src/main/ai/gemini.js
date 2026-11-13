@@ -198,41 +198,17 @@ async function transcribeAudio({ base64, mimeType = 'audio/webm' }) {
     throw new Error('Falta configurar GEMINI_API_KEY en .env');
   }
 
-  const model = getModel();
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-
   const cleanMime = mimeType.split(';')[0].trim() || 'audio/webm';
-  const prompt = 'Eres un transcriptor de comandos por voz para un asistente de escritorio en Linux. Transcribe fielmente lo que dice la persona en español. Devuelve EXCLUSIVAMENTE el texto hablado, sin comillas, sin introducciones ni explicaciones. Si solo hay silencio, ruido o no hay habla distinguible, devuelve exactamente nada (cadena vacía).';
+  const prompt = 'Transcribe fielmente lo que dice la persona en este audio (en español; puede incluir el nombre "Capri" o términos técnicos en inglés). Devuelve EXCLUSIVAMENTE el texto hablado, sin comillas ni explicaciones. Si no hay voz humana clara o solo hay silencio/ruido, responde exactamente "[SILENCIO]".';
 
-  let res = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{
-        parts: [
-          { text: prompt },
-          {
-            inlineData: {
-              mimeType: cleanMime,
-              data: base64,
-            },
-          },
-        ],
-      }],
-      generationConfig: {
-        temperature: 0.1,
-        maxOutputTokens: 256,
-        thinkingConfig: {
-          thinkingBudget: 0,
-        },
-      },
-    }),
-  });
+  const candidateModels = [...new Set(['gemini-flash-lite-latest', 'gemini-3.5-flash-lite', getModel()])];
+  let lastError = null;
 
-  if (res.status === 400) {
-    const errorBody = await res.clone().text().catch(() => '');
-    if (errorBody.includes('thinkingConfig') || errorBody.includes('thinkingBudget')) {
-      res = await fetch(url, {
+  for (const model of candidateModels) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+    try {
+      const makeReq = (withThinking) => fetch(url, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -248,24 +224,42 @@ async function transcribeAudio({ base64, mimeType = 'audio/webm' }) {
             ],
           }],
           generationConfig: {
-            temperature: 0.1,
+            temperature: 0.0,
             maxOutputTokens: 256,
+            ...(withThinking ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
           },
         }),
       });
+
+      let res = await makeReq(true);
+      if (res.status === 400) {
+        const errorBody = await res.clone().text().catch(() => '');
+        if (errorBody.includes('thinkingConfig') || errorBody.includes('thinkingBudget')) {
+          res = await makeReq(false);
+        }
+      }
+
+      if (res.ok) {
+        const data = await res.json();
+        const parts = data.candidates?.[0]?.content?.parts || [];
+        let transcript = '';
+        for (const part of parts) {
+          if (part.text) transcript += part.text;
+        }
+        transcript = transcript.trim();
+        if (!transcript || transcript.includes('[SILENCIO]')) {
+          return '';
+        }
+        return transcript;
+      }
+
+      lastError = await failure(res);
+    } catch (err) {
+      lastError = err;
     }
   }
 
-  if (!res.ok) throw await failure(res);
-
-  const data = await res.json();
-  const candidate = data.candidates?.[0];
-  const parts = candidate?.content?.parts || [];
-  let transcript = '';
-  for (const part of parts) {
-    if (part.text) transcript += part.text;
-  }
-  return transcript.trim();
+  throw lastError || new Error('No se pudo transcribir el audio');
 }
 
 module.exports = {

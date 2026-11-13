@@ -728,7 +728,7 @@ function registerIpc() {
     return {
       local: cfg.aiProvider === 'ollama',
       provider: cfg.aiProvider === 'gemini' ? 'Google Gemini Flash' : 'Ollama local',
-      model: cfg.aiProvider === 'gemini' ? ai.gemini.getModel() : 'llama3'
+      model: cfg.aiProvider === 'gemini' ? ai.gemini.getModel() : (process.env.OLLAMA_MODEL || 'llama3.2:1b')
     };
   });
   ipcMain.on('overlay:focus', (_e, on) => {
@@ -759,7 +759,9 @@ function registerIpc() {
         return false;
       }
 
-      clipboard.writeImage(image);
+      if (typeof clipboard?.writeImage === 'function') {
+        try { clipboard.writeImage(image); } catch {}
+      }
 
       if (process.platform === 'linux') {
         try {

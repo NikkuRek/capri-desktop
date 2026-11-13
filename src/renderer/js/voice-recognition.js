@@ -49,8 +49,8 @@ function blobToBase64(blob) {
 }
 
 // Regex para detectar "Capri" al inicio o en la frase
-const WAKE_WORD_RE = /^(?:(?:oye|hey|ok|hola|eh|ey)\s+)?(?:capri|capry|cabri|kapri|capre)\b[,:\s-]*(.*)/i;
-const EMBEDDED_CAPRI_RE = /\b(?:capri|capry|cabri|kapri|capre)\b[,:\s-]*(.*)/i;
+const WAKE_WORD_RE = /^(?:(?:oye|hey|ok|hola|eh|ey)\s+)?(?:capri|capry|cabri|kapri|capre|catri|capi|cafri)\b[,:\s-]*(.*)/i;
+const EMBEDDED_CAPRI_RE = /\b(?:capri|capry|cabri|kapri|capre|catri|capi|cafri)\b[,:\s-]*(.*)/i;
 
 export class VoiceRecognition {
   constructor(host) {
@@ -83,13 +83,15 @@ export class VoiceRecognition {
   }
 
   // Inicia el modo de escucha continua tipo Jarvis (Wake Word "Capri")
-  async startContinuous({ onWakeWord, onSpeechStateChange, onInterim, onError, lang = 'es-ES' } = {}) {
+  async startContinuous({ onWakeWord, onSpeechStateChange, onTranscribing, onFollowupTimeout, onInterim, onError, lang = 'es-ES' } = {}) {
     this.alwaysOn = true;
     this.isPaused = false;
     this.callbacks = {
       ...this.callbacks,
       onWakeWord,
       onSpeechStateChange,
+      onTranscribing,
+      onFollowupTimeout,
       onInterim,
       onError,
       lang,
@@ -143,10 +145,11 @@ export class VoiceRecognition {
     }
   }
 
-  // Inicializa el flujo de micrófono (WebSpeech API o getUserMedia + VAD)
+  // Inicializa el flujo de micrófono (WebSpeech API en navegador o getUserMedia + VAD en Electron)
   async initStream() {
     if (this.active) return;
-    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const isElectron = typeof navigator !== 'undefined' && /Electron/i.test(navigator.userAgent);
+    const SpeechRec = !isElectron && (window.SpeechRecognition || window.webkitSpeechRecognition);
 
     if (SpeechRec) {
       try {
@@ -240,12 +243,23 @@ export class VoiceRecognition {
 
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       const audioCtx = new AudioCtx({ sampleRate: 16000 });
+      if (audioCtx.state === 'suspended') {
+        await audioCtx.resume().catch(() => {});
+      }
       this.audioContext = audioCtx;
 
       const source = audioCtx.createMediaStreamSource(stream);
       // Buffer size 4096 a 16kHz da eventos cada ~256ms
       const processor = audioCtx.createScriptProcessor(4096, 1, 1);
       this.processor = processor;
+
+      // Silenciar salida al altavoz manteniendo vivo el grafo de audio
+      const silentGain = audioCtx.createGain();
+      silentGain.gain.value = 0;
+
+      let preRoll = [];
+      const PRE_ROLL_CHUNKS = 2; // ~512ms previos para no cortar el inicio de "Capri"
+      let noiseFloor = 0.001;
 
       processor.onaudioprocess = (e) => {
         if (!this.active || this.isPaused || this.mode !== 'audio-record') return;
@@ -257,12 +271,13 @@ export class VoiceRecognition {
           sum += channelData[i] * channelData[i];
         }
         const rms = Math.sqrt(sum / channelData.length);
+        const threshold = Math.max(0.0025, noiseFloor * 2.6);
 
-        const SPEECH_THRESHOLD = 0.018;
-
-        if (rms > SPEECH_THRESHOLD) {
+        if (rms > threshold) {
           if (!this.isSpeaking) {
             this.isSpeaking = true;
+            this.recordedSamples = [...preRoll];
+            preRoll = [];
             this.callbacks?.onSpeechStateChange?.(true);
           }
           this.silenceTicks = 0;
@@ -280,20 +295,33 @@ export class VoiceRecognition {
             const chunks = this.recordedSamples;
             this.recordedSamples = [];
 
-            // Procesar si supera ~0.38s de audio mínimo (6000 muestras)
+            // Procesar si supera ~0.38s de audio mínimo (6000 muestras) y tiene pico suficiente
             let totalLen = 0;
-            for (const c of chunks) totalLen += c.length;
-            if (totalLen >= 6000) {
-              this.processRecordedSpeech(chunks, totalLen);
+            let maxPeak = 0;
+            for (const c of chunks) {
+              totalLen += c.length;
+              for (let i = 0; i < c.length; i += 4) {
+                const v = Math.abs(c[i]);
+                if (v > maxPeak) maxPeak = v;
+              }
+            }
+            if (totalLen >= 6000 && maxPeak >= 0.005) {
+              this.processRecordedSpeech(chunks, totalLen, maxPeak);
             }
           }
+        } else {
+          // Actualizar piso de ruido ambiental suavemente
+          noiseFloor = noiseFloor * 0.92 + rms * 0.08;
+          preRoll.push(new Float32Array(channelData));
+          if (preRoll.length > PRE_ROLL_CHUNKS) preRoll.shift();
         }
       };
 
       source.connect(processor);
-      processor.connect(audioCtx.destination);
+      processor.connect(silentGain);
+      silentGain.connect(audioCtx.destination);
       this.active = true;
-      console.log('[capri:voice] Micrófono siempre activo (Continuous Wake Word "Capri" listo).');
+      console.warn('[capri:voice] Micrófono siempre activo (VAD adaptativo listo).');
     } catch (err) {
       console.error('[capri:voice] Error accediendo al micrófono:', err);
       this.callbacks?.onError?.(err.name || 'permission_denied');
@@ -301,9 +329,10 @@ export class VoiceRecognition {
     }
   }
 
-  async processRecordedSpeech(chunks, totalLength) {
+  async processRecordedSpeech(chunks, totalLength, maxPeak = 0.1) {
     if (this.isTranscribing) return;
     this.isTranscribing = true;
+    this.callbacks?.onTranscribing?.(true);
 
     try {
       const merged = new Float32Array(totalLength);
@@ -311,6 +340,14 @@ export class VoiceRecognition {
       for (const chunk of chunks) {
         merged.set(chunk, offset);
         offset += chunk.length;
+      }
+
+      // Normalizar ganancia para micrófonos con volumen bajo (ej. 27% en Linux)
+      if (maxPeak > 0.001 && maxPeak < 0.5) {
+        const gain = Math.min(12, 0.75 / maxPeak);
+        for (let i = 0; i < merged.length; i++) {
+          merged[i] = Math.max(-1, Math.min(1, merged[i] * gain));
+        }
       }
 
       const sampleRate = this.audioContext?.sampleRate || 16000;
@@ -321,12 +358,16 @@ export class VoiceRecognition {
 
       const res = await this.host.transcribeAudio({ base64, mimeType: 'audio/wav' });
       if (res?.ok && res.text && res.text.trim()) {
+        console.warn('[capri:voice] Transcripción:', res.text.trim());
         this.handleTranscription(res.text.trim());
+      } else if (res && !res.ok) {
+        console.warn('[capri:voice] Fallo transcripción:', res.error);
       }
     } catch (err) {
       console.warn('[capri:voice] Error procesando transcripción:', err.message);
     } finally {
       this.isTranscribing = false;
+      this.callbacks?.onTranscribing?.(false);
     }
   }
 

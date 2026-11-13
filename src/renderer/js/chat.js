@@ -233,7 +233,7 @@ const SITES = {
 // a browser named with a site ("open youtube on chrome"): the site, in the browser you use
 const BROWSER = /chrome|edge|firefox|opera|brave|vivaldi|duckduckgo|browser/i;
 // local models this small mostly talk nonsense ("llama3.2:1b", "qwen2.5:0.5b"…)
-const TINY = /[:-](0\.5b|1b|1\.5b|135m|270m|360m)\b/i;
+const TINY = /[:-](0\.5b|135m|270m|360m)\b/i;
 // her face when she greets you in a mood (bond.js)
 const MOOD_FACE = { angry: 'many', sulk: 'aside', dizzy: 'wide', thrown: 'wide', jealous: 'look', fun: 'laugh', happy: 'laugh', forgiven: 'smug' };
 
@@ -372,7 +372,23 @@ export class Chat {
       },
       onSpeechStateChange: (speaking) => {
         if (this.open) {
-          this.panel.setMicListening(speaking);
+          this.panel.setMicListening(speaking || this.voiceRec.waitingForFollowup);
+          if (speaking && this.panel.chatInput && this.voiceRec.waitingForFollowup) {
+            this.panel.chatInput.placeholder = 'Captando voz...';
+          }
+        }
+      },
+      onTranscribing: (busy) => {
+        if (this.open && this.panel.chatInput && this.voiceRec.waitingForFollowup) {
+          this.panel.chatInput.placeholder = busy ? 'Procesando voz...' : 'Te escucho, dime la orden...';
+        }
+      },
+      onFollowupTimeout: () => {
+        if (this.open) {
+          this.panel.setMicListening(false);
+          if (this.panel.chatInput) {
+            this.panel.chatInput.placeholder = this.t.placeholder;
+          }
         }
       },
       onInterim: (text) => {
@@ -395,14 +411,18 @@ export class Chat {
       await this.capri.unstow();
     }
     this.capri.wake();
+    this.capri.pulse();
 
     if (isPrompt) {
-      // Dijo únicamente "Capri": confirmación con sonido y esperar orden hablada
+      // Dijo únicamente "Capri": confirmación con sonido, salto y esperar orden hablada
       this.voice?.play('bolt');
       if (!this.open) {
         await this.start();
+      } else {
+        this.capri.perform('hop');
       }
       this.panel.setMicListening(true);
+      this.panel.setFace('look');
       if (this.panel.chatInput) {
         this.panel.chatInput.placeholder = 'Te escucho, dime la orden...';
         this.panel.chatInput.value = '';
@@ -419,11 +439,12 @@ export class Chat {
       }
       this.panel.setMicListening(false);
       if (this.panel.chatInput) {
-        this.panel.chatInput.value = command;
+        this.panel.chatInput.placeholder = this.t.placeholder;
+        this.panel.chatInput.value = '';
       }
       setTimeout(() => {
         if (this.open && !this.turn) {
-          this.send(command);
+          this.send(command, { fromVoice: true });
         }
       }, 150);
     }
@@ -479,8 +500,20 @@ export class Chat {
     this.capri.nextGaze = performance.now() + 60000;
   }
 
-  async send(text) {
+  keepListeningAfterVoice() {
+    if (!this.open || !this.voiceRec) return;
+    this.voiceRec.triggerDirectListen(12000);
+    this.panel.setMicListening(true);
+    if (this.panel.chatInput) {
+      this.panel.chatInput.placeholder = 'Te escucho, dime la siguiente orden...';
+    }
+  }
+
+  async send(text, { fromVoice = false } = {}) {
     if (this.turn || !this.open) return;
+    if (this.panel.chatInput) {
+      this.panel.chatInput.value = '';
+    }
     const id = Date.now();
     this.turn = id;
     this.answer = '';
@@ -505,6 +538,7 @@ export class Chat {
           this.remember({ role: 'assistant', content: done.line });
         }
         this.listApps();
+        if (fromVoice) this.keepListeningAfterVoice();
         return;
       }
     }
@@ -558,6 +592,7 @@ export class Chat {
     this.panel.setChatBusy(false);
     if (!this.agent) this.after(res.text, answer, asked, early, text);
     this.listApps(); // fresh for the next message
+    if (fromVoice) this.keepListeningAfterVoice();
   }
 
   // "Look at my screen" in her chat: she looks (asking you first, the first time) and answers here,
