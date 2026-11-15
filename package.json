@@ -33,7 +33,10 @@
   },
   "dependencies": {
     "@fontsource/chakra-petch": "^5.3.0",
-    "@fontsource/jetbrains-mono": "^5.3.0"
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "better-sqlite3": "^12.11.1",
+    "node-webcam": "^0.8.2",
+    "puppeteer": "^24.43.1"
   },
   "build": {
     "appId": "capri.desktop",
@@ -47,7 +50,10 @@
       "LICENSE"
     ],
     "linux": {
-      "target": ["AppImage", "tar.gz"],
+      "target": [
+        "AppImage",
+        "tar.gz"
+      ],
       "category": "Utility",
       "icon": "assets/icons/capri.png"
     }

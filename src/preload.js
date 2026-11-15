@@ -48,6 +48,7 @@ contextBridge.exposeInMainWorld('host', {
   transcribeAudio: (req) => ipcRenderer.invoke('audio:transcribe', req),
   onForget: on('chat:forget'),
   onChatDelta: on('chat:delta'),
+  onToolStatus: on('tool-status'),
   lookSnap: () => ipcRenderer.invoke('look:snap'),
   lookSay: (request) => ipcRenderer.invoke('look:say', request),
   lookWhere: () => ipcRenderer.invoke('look:where'),
@@ -82,4 +83,8 @@ contextBridge.exposeInMainWorld('host', {
   generateTasks: (req) => ipcRenderer.invoke('tasks:generate', req),
   openSite: (address, browser) => ipcRenderer.invoke('apps:site', typeof address === 'object' ? address : { url: address, browser }),
   focusOverlay: (focused) => ipcRenderer.send('overlay:focus', Boolean(focused)),
+});
+
+contextBridge.exposeInMainWorld('capri', {
+  onToolStatus: on('tool-status'),
 });

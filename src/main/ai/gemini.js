@@ -51,15 +51,46 @@ async function checkStatus() {
   }
 }
 
+function toGeminiTools(tools = []) {
+  if (!tools.length) return undefined;
+  return [{
+    functionDeclarations: tools.map((t) => {
+      const decl = {
+        name: t.name,
+        description: t.description,
+      };
+      const props = t.parameters?.properties || {};
+      if (Object.keys(props).length > 0) {
+        decl.parameters = {
+          type: 'OBJECT',
+          properties: Object.fromEntries(
+            Object.entries(props).map(([k, v]) => [
+              k,
+              { type: String(v.type || 'string').toUpperCase(), description: v.description || '' },
+            ])
+          ),
+          required: t.parameters?.required || [],
+        };
+      }
+      return decl;
+    }),
+  }];
+}
+
 // Transforma el historial de mensajes [ { role: 'user'|'assistant'|'system', content } ]
 // al formato de Gemini Contents y SystemInstruction
-function formatGeminiPayload(messages, { disableThinking = true } = {}) {
+function formatGeminiPayload(messages, { disableThinking = true, tools = [] } = {}) {
   let systemText = '';
   const contents = [];
 
   for (const msg of messages) {
     if (msg.role === 'system') {
       systemText = systemText ? `${systemText}\n\n${msg.content}` : msg.content;
+    } else if (msg.parts) {
+      contents.push({
+        role: msg.role === 'assistant' ? 'model' : msg.role,
+        parts: msg.parts,
+      });
     } else {
       contents.push({
         role: msg.role === 'assistant' ? 'model' : 'user',
@@ -90,6 +121,11 @@ function formatGeminiPayload(messages, { disableThinking = true } = {}) {
     generationConfig,
   };
 
+  const geminiTools = toGeminiTools(tools);
+  if (geminiTools) {
+    payload.tools = geminiTools;
+  }
+
   if (systemText) {
     payload.systemInstruction = {
       parts: [{ text: systemText }],
@@ -99,8 +135,8 @@ function formatGeminiPayload(messages, { disableThinking = true } = {}) {
   return payload;
 }
 
-// Envío de mensaje a Gemini con streaming de respuestas en tiempo real
-async function chat({ messages, model: modelOverride }, onDelta, signal) {
+// Envío de mensaje a Gemini con streaming de respuestas en tiempo real y soporte Tool Calling
+async function chat({ messages, model: modelOverride, tools = [], onToolCall }, onDelta, signal) {
   const apiKey = getApiKey();
   if (!apiKey) {
     throw new Error('No se encontró GEMINI_API_KEY. Configura tu clave en el archivo .env.');
@@ -109,83 +145,126 @@ async function chat({ messages, model: modelOverride }, onDelta, signal) {
   const model = modelOverride || getModel();
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
 
-  let payload = formatGeminiPayload(messages, { disableThinking: true });
-  let res = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(payload),
-    signal,
-  });
-
-  // Si el modelo rechaza thinkingConfig (400), reintentamos sin thinkingConfig
-  if (res.status === 400) {
-    const errorBody = await res.clone().text().catch(() => '');
-    if (errorBody.includes('thinkingConfig') || errorBody.includes('thinkingBudget')) {
-      payload = formatGeminiPayload(messages, { disableThinking: false });
-      res = await fetch(url, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(payload),
-        signal,
-      });
-    }
-  }
-
-  if (!res.ok) throw await failure(res);
-
-  const decoder = new TextDecoder();
-  let buffer = '';
+  const conversation = [...messages];
+  const MAX_TOOL_TURNS = 3;
   let fullText = '';
-  let finishReason = null;
 
-  function processLine(line) {
-    if (!line.startsWith('data: ')) return;
-    const rawJson = line.slice(6).trim();
-    if (!rawJson || rawJson === '[DONE]') return;
-    try {
-      const parsed = JSON.parse(rawJson);
-      const candidate = parsed.candidates?.[0];
-      if (candidate?.finishReason) {
-        finishReason = candidate.finishReason;
+  for (let turn = 0; turn <= MAX_TOOL_TURNS; turn++) {
+    let payload = formatGeminiPayload(conversation, { disableThinking: true, tools });
+    let res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal,
+    });
+
+    // Si el modelo rechaza thinkingConfig (400), reintentamos sin thinkingConfig
+    if (res.status === 400) {
+      const errorBody = await res.clone().text().catch(() => '');
+      if (errorBody.includes('thinkingConfig') || errorBody.includes('thinkingBudget')) {
+        payload = formatGeminiPayload(conversation, { disableThinking: false, tools });
+        res = await fetch(url, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal,
+        });
       }
-      if (candidate?.content?.parts && Array.isArray(candidate.content.parts)) {
-        for (const part of candidate.content.parts) {
-          if (part && typeof part.text === 'string' && part.text.length > 0) {
-            fullText += part.text;
-            if (typeof onDelta === 'function') {
-              onDelta(part.text);
+    }
+
+    if (!res.ok) throw await failure(res);
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let turnText = '';
+    let finishReason = null;
+    const modelParts = [];
+    const functionCalls = [];
+
+    function processLine(line) {
+      if (!line.startsWith('data: ')) return;
+      const rawJson = line.slice(6).trim();
+      if (!rawJson || rawJson === '[DONE]') return;
+      try {
+        const parsed = JSON.parse(rawJson);
+        const candidate = parsed.candidates?.[0];
+        if (candidate?.finishReason) {
+          finishReason = candidate.finishReason;
+        }
+        if (candidate?.content?.parts && Array.isArray(candidate.content.parts)) {
+          for (const part of candidate.content.parts) {
+            if (!part) continue;
+            if (part.functionCall) {
+              modelParts.push(part);
+              functionCalls.push(part.functionCall);
+            } else if (typeof part.text === 'string' && part.text.length > 0) {
+              modelParts.push(part);
+              turnText += part.text;
+              fullText += part.text;
+              if (typeof onDelta === 'function') {
+                onDelta(part.text);
+              }
             }
           }
         }
+      } catch {
+        // Fragmento no parseable, omitir
       }
-    } catch {
-      // Fragmento no parseable, omitir
     }
-  }
 
-  for await (const chunk of res.body) {
-    buffer += decoder.decode(chunk, { stream: true });
-    let nl;
-    while ((nl = buffer.indexOf('\n')) >= 0) {
-      const line = buffer.slice(0, nl).trim();
-      buffer = buffer.slice(nl + 1);
-      processLine(line);
+    for await (const chunk of res.body) {
+      buffer += decoder.decode(chunk, { stream: true });
+      let nl;
+      while ((nl = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, nl).trim();
+        buffer = buffer.slice(nl + 1);
+        processLine(line);
+      }
     }
-  }
 
-  // Procesar cualquier línea remanente en el buffer
-  if (buffer.trim()) {
-    processLine(buffer.trim());
-  }
+    // Procesar cualquier línea remanente en el buffer
+    if (buffer.trim()) {
+      processLine(buffer.trim());
+    }
 
-  if (!fullText.trim()) {
-    if (finishReason === 'SAFETY') {
-      throw new Error('La respuesta fue bloqueada por filtros de seguridad de Gemini.');
+    // Si Gemini invocó herramientas y tenemos manejador, ejecutarlas y continuar el ciclo
+    if (functionCalls.length > 0 && typeof onToolCall === 'function' && turn < MAX_TOOL_TURNS) {
+      conversation.push({ role: 'assistant', parts: modelParts });
+
+      const responseParts = [];
+      for (const call of functionCalls) {
+        const result = await onToolCall(call.name, call.args || {});
+        const { image, ...jsonResult } = result || {};
+        responseParts.push({
+          functionResponse: {
+            name: call.name,
+            response: jsonResult,
+          },
+        });
+        if (image?.base64) {
+          responseParts.push({
+            inlineData: {
+              mimeType: image.mimeType || 'image/jpeg',
+              data: image.base64,
+            },
+          });
+        }
+      }
+      conversation.push({ role: 'user', parts: responseParts });
+      continue;
     }
-    if (finishReason === 'MAX_TOKENS') {
-      throw new Error('Gemini agotó el límite de tokens antes de emitir la respuesta.');
+
+    if (!fullText.trim()) {
+      if (finishReason === 'SAFETY') {
+        throw new Error('La respuesta fue bloqueada por filtros de seguridad de Gemini.');
+      }
+      if (finishReason === 'MAX_TOKENS') {
+        throw new Error('Gemini agotó el límite de tokens antes de emitir la respuesta.');
+      }
+      throw new Error('Gemini no generó texto en su respuesta.');
     }
-    throw new Error('Gemini no generó texto en su respuesta.');
+
+    return fullText;
   }
 
   return fullText;

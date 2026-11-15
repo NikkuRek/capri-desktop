@@ -687,7 +687,8 @@ function registerIpc() {
     chats.set(id, abort);
     try {
       const sendDelta = (text) => overlay?.webContents.send('chat:delta', { id, text });
-      const text = await ai.chat({ messages, provider: cfg.aiProvider }, sendDelta, abort.signal);
+      const onToolStatus = (data) => overlay?.webContents.send('tool-status', data);
+      const text = await ai.chat({ messages, provider: cfg.aiProvider, onToolStatus }, sendDelta, abort.signal);
       return { ok: true, text };
     } catch (err) {
       return { ok: false, error: abort.signal.aborted ? 'stopped' : err.message };

@@ -261,6 +261,7 @@ export class Chat {
     this.voiceRec = new VoiceRecognition(host);
     this.initContinuousVoice();
     host.onChatDelta(({ id, text }) => this.onDelta(id, text));
+    host.onToolStatus?.((data) => this.onToolStatus(data));
   }
 
   get t() {
@@ -315,6 +316,7 @@ export class Chat {
     }
     this.history = await host.chatMemory().catch(() => this.history); // "forget" in her menu may have emptied it
     this.cold = status.warmup && !this.warm;
+    this.local = Boolean(status.local);
     this.agent = Boolean(status.agent); // Claude Code answers, as her, and really works in your project
     this.listApps();
     const shortModel = status.model.replace(/:latest$/, '').replace(/^models\//, ''); // Ollama's tag, Gemini's prefix
@@ -543,7 +545,7 @@ export class Chat {
       }
     }
     this.bond?.heard(text); // "sorry": she lets it go
-    await Promise.race([this.appsReady, new Promise((r) => setTimeout(r, 1500))]);
+    if (!this.local) await Promise.race([this.appsReady, new Promise((r) => setTimeout(r, 1500))]);
     // what she greeted you with (angry, sulking…), in the conversation before your message, so her
     // answer carries on from it (after another answer of hers: added to that one, never two in a row)
     if (this.opening) {
@@ -553,14 +555,20 @@ export class Chat {
       else this.history.splice(at, 0, { role: 'assistant', content: this.opening });
       this.opening = null;
     }
-    const messages = [{ role: 'system', content: this.persona() }, ...this.history.slice(-REMEMBER)];
+    const systemPrompt = this.local ? this.compactPersona() : this.persona();
+    const recentHistory = this.local ? this.compactHistory() : this.history.slice(-REMEMBER);
+    const messages = [{ role: 'system', content: systemPrompt }, ...recentHistory];
     // Her mood (angry, sulking…) and her language, said again right by your message, for this answer
     // only. Small local models mostly go by the last thing they read: up in her prompt alone, they
     // forget it (and answer in English after a conversation in English).
     if (!this.agent) {
-      const mood = this.bond?.moodLine().replace(/^Right now: /, '');
       const last = messages.at(-1);
-      messages[messages.length - 1] = { ...last, content: `${last.content}\n\n(Note for you, never repeat it: ${[mood, this.languageNote()].filter(Boolean).join(' ')})` };
+      if (this.local) {
+        messages[messages.length - 1] = { ...last, content: `${last.content}\n(${this.languageNote()})` };
+      } else {
+        const mood = this.bond?.moodLine().replace(/^Right now: /, '');
+        messages[messages.length - 1] = { ...last, content: `${last.content}\n\n(Note for you, never repeat it: ${[mood, this.languageNote()].filter(Boolean).join(' ')})` };
+      }
     }
     // nothing yet after a few seconds: Ollama is still loading the model (the first answer after a start),
     // or Claude Code is at work
@@ -1240,6 +1248,43 @@ export class Chat {
     this.voice.play('blip'); // her blips as the words come in
   }
 
+  onToolStatus({ tool, status } = {}) {
+    if (!tool || !status) return;
+    if (status === 'started') {
+      this.capri.wake();
+      if (tool === 'observar_camara') {
+        this.panel.setFace('look');
+        this.panel.setQuote('Mirando por la cámara...');
+        this.capri.setMode('alert');
+        this.capri.perform('curious');
+        this.flashCamera();
+      } else if (tool === 'buscar_internet') {
+        this.panel.setFace('aside');
+        this.panel.setQuote('Buscando en internet...');
+        this.capri.setMode('work');
+        this.capri.perform('gaze');
+      } else if (tool === 'recordar_hecho') {
+        this.panel.setFace('smug');
+        this.panel.setQuote('Guardando en memoria...');
+        this.capri.perform('hop');
+      }
+    } else if (status === 'finished') {
+      this.panel.setQuote('');
+      if (!this.answer) this.panel.setFace('look');
+      this.capri.setMode('idle');
+    }
+  }
+
+  flashCamera() {
+    const flash = document.createElement('div');
+    flash.style.cssText = 'position:fixed;inset:0;background:#fff;opacity:0.75;pointer-events:none;z-index:99999;transition:opacity 280ms ease-out;';
+    document.body.appendChild(flash);
+    requestAnimationFrame(() => {
+      flash.style.opacity = '0';
+    });
+    setTimeout(() => flash.remove(), 320);
+  }
+
   // Her language, in it, for right by the message (above).
   languageNote() {
     return (IN_LANGUAGE[this.brain.lang] || IN_LANGUAGE.en).now;
@@ -1292,6 +1337,38 @@ export class Chat {
       ...(watching ? [`If the user asks what ${assistant} is doing, here is all you know (never make anything up): ${this.brain.context()}`] : []),
       // how she feels right now, last but for her language: small models follow the end of it best
       ...[this.bond?.moodLine()].filter(Boolean),
+      lang.last,
+    ].join('\n');
+  }
+
+  // Ultra-compact history for local Ollama: last 3 messages, trimming older turns to keep prompt small.
+  compactHistory() {
+    const slice = this.history.slice(-3);
+    return slice.map((msg, idx) => {
+      if (idx === slice.length - 1) return msg;
+      const text = String(msg.content || '');
+      return text.length > 140 ? { ...msg, content: `${text.slice(0, 137)}...` } : msg;
+    });
+  }
+
+  // Ultra-compact personal context for local Ollama (compressed user name, style, and recent memories).
+  compactPersonal() {
+    const { userName, persona, memories = [] } = this.brain.custom || {};
+    const parts = [];
+    if (userName) parts.push(`User: ${userName}.`);
+    if (persona) parts.push(`Style: ${String(persona).trim().slice(0, 120)}.`);
+    if (memories.length) parts.push(`Memory: ${memories.slice(-3).join('; ').slice(0, 150)}.`);
+    return parts;
+  }
+
+  // Ultra-compact system prompt for local CPU-bound models (Ollama) to minimize prompt evaluation latency.
+  compactPersona() {
+    const lang = IN_LANGUAGE[this.brain.lang] || IN_LANGUAGE.en;
+    const feeling = this.bond?.feeling;
+    return [
+      'Capri (Edgerunners digital ghost): playful, teasing, warm, occasional Night City slang (choom, nova), sometimes "we". Reply in 1-2 short plain sentences, no markdown/emojis.',
+      ...this.compactPersonal(),
+      ...(feeling ? [`Mood: ${feeling}.`] : []),
       lang.last,
     ].join('\n');
   }

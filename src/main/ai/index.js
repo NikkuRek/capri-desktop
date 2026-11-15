@@ -5,6 +5,111 @@
 
 const gemini = require('./gemini');
 const ollama = require('./ollama');
+const memory = require('../memory');
+const vision = require('../vision');
+const web = require('../web');
+
+const SYSTEM_TOOLS = [
+  {
+    name: 'recordar_hecho',
+    description: 'Guarda información importante y persistente sobre el usuario (preferencias, equipo, compras, relaciones, datos personales) en la memoria a largo plazo.',
+    parameters: {
+      type: 'object',
+      properties: {
+        concept: {
+          type: 'string',
+          description: "Tema o entidad principal (ej. 'PC', 'Mascota', 'Teclado').",
+        },
+        fact: {
+          type: 'string',
+          description: "El hecho detallado (ej. 'Tiene 24GB de RAM', 'Compró un teclado en MercadoLibre').",
+        },
+      },
+      required: ['concept', 'fact'],
+    },
+  },
+  {
+    name: 'observar_camara',
+    description: "Toma una fotografía instantánea usando la webcam del usuario para ver su entorno, objetos o a él mismo. Úsala SOLO cuando el usuario te pida explícitamente que mires algo físico ('mira esto', 'qué opinas de mi ropa', 'voltea a verme').",
+    parameters: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: 'buscar_internet',
+    description: 'Busca en internet información en tiempo real, precios, noticias o datos actualizados que no conoces. Usa esta herramienta cuando el usuario te pida buscar un producto, una noticia o resolver una duda que requiera acceso a la web.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: "Los términos de búsqueda exactos y concisos para el buscador (ej. 'teclados mecánicos mercadolibre venezuela', 'precio del dólar hoy').",
+        },
+      },
+      required: ['query'],
+    },
+  },
+];
+
+function injectMemoryContext(messages = []) {
+  const cloned = messages.map((m) => ({ ...m }));
+  const lastUser = [...cloned].reverse().find((m) => m.role === 'user');
+  const userPrompt = typeof lastUser?.content === 'string' ? lastUser.content : '';
+  if (!userPrompt) return cloned;
+
+  const recalledFacts = memory.recallContext(userPrompt);
+  if (!recalledFacts) return cloned;
+
+  const block = `\n\n[CONTEXTO DE MEMORIA A LARGO PLAZO]\n${recalledFacts}\nUsa esta información de forma sutil y natural en tu respuesta solo si es estrictamente relevante.`;
+  const sysIndex = cloned.findIndex((m) => m.role === 'system');
+  if (sysIndex >= 0) {
+    cloned[sysIndex].content = `${cloned[sysIndex].content || ''}${block}`;
+  } else {
+    cloned.unshift({ role: 'system', content: block.trim() });
+  }
+  return cloned;
+}
+
+async function handleToolCall(name, args = {}) {
+  if (name === 'recordar_hecho') {
+    const saved = memory.saveFact(args.concept, args.fact);
+    return {
+      status: saved ? 'success' : 'error',
+      message: saved ? 'Hecho recordado en SQLite' : 'No se pudo guardar el hecho en SQLite',
+    };
+  }
+  if (name === 'observar_camara') {
+    const frame = await vision.captureFrame();
+    if (!frame.ok) {
+      return {
+        status: 'error',
+        message: frame.error || 'No se pudo capturar el fotograma de la webcam.',
+      };
+    }
+    return {
+      status: 'success',
+      message: 'Fotograma capturado desde la webcam.',
+      image: {
+        mimeType: frame.mimeType || 'image/jpeg',
+        base64: frame.base64,
+      },
+    };
+  }
+  if (name === 'buscar_internet') {
+    const query = String(args?.query ?? '').trim();
+    if (!query) {
+      return { status: 'error', message: 'No se proporcionó el parámetro query para buscar en internet.' };
+    }
+    const text = await web.searchWeb(query);
+    return {
+      status: text.startsWith('Error al buscar') ? 'error' : 'success',
+      message: text,
+    };
+  }
+  return { status: 'error', message: `Herramienta no soportada: ${name}` };
+}
 
 function resolveProvider(cfg = {}) {
   if (cfg.aiProvider === 'gemini' || cfg.aiProvider === 'ollama') {
@@ -40,13 +145,31 @@ async function status(cfg = {}) {
   }
 }
 
-async function chat({ messages, provider: reqProvider, model }, onDelta, signal) {
+async function chat({ messages, provider: reqProvider, model, onToolStatus }, onDelta, signal) {
   const provider = reqProvider || (gemini.getApiKey() ? 'gemini' : 'ollama');
+  const enrichedMessages = injectMemoryContext(messages);
+
+  const notifyToolCall = async (name, args) => {
+    try {
+      onToolStatus?.({ tool: name, status: 'started' });
+      return await handleToolCall(name, args);
+    } finally {
+      onToolStatus?.({ tool: name, status: 'finished' });
+    }
+  };
 
   if (provider === 'gemini') {
-    return gemini.chat({ messages, model }, onDelta, signal);
+    return gemini.chat(
+      { messages: enrichedMessages, model, tools: SYSTEM_TOOLS, onToolCall: notifyToolCall },
+      onDelta,
+      signal
+    );
   } else {
-    return ollama.chat({ messages, model }, onDelta, signal);
+    return ollama.chat(
+      { messages: enrichedMessages, model, tools: SYSTEM_TOOLS, onToolCall: notifyToolCall },
+      onDelta,
+      signal
+    );
   }
 }
 
