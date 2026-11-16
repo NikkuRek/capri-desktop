@@ -9,6 +9,7 @@ const {
 } = require('electron');
 
 app.commandLine.appendSwitch('remote-debugging-port', '9222');
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
 const config = require('./config');
 

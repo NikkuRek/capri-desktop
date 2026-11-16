@@ -34,6 +34,7 @@ const ALIASES = {
   'google chrome': { name: 'Google Chrome', command: 'flatpak run --command=/app/bin/chrome com.google.Chrome' },
   brave: { name: 'Brave Browser', command: 'brave' },
   'brave browser': { name: 'Brave Browser', command: 'brave' },
+  'Navegador': { name: 'Brave Browser', command: 'brave' },
   dolphin: { name: 'Dolphin', command: 'dolphin' },
   explorador: { name: 'Dolphin', command: 'dolphin' },
   archivos: { name: 'Dolphin', command: 'dolphin' },

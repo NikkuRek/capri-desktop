@@ -5,9 +5,11 @@
 
 const gemini = require('./gemini');
 const ollama = require('./ollama');
+const localStt = require('./local-stt');
 const memory = require('../memory');
 const vision = require('../vision');
 const web = require('../web');
+const windows = require('../windows');
 
 const SYSTEM_TOOLS = [
   {
@@ -49,6 +51,25 @@ const SYSTEM_TOOLS = [
         },
       },
       required: ['query'],
+    },
+  },
+  {
+    name: 'controlar_entorno',
+    description: 'Controla el entorno de escritorio del usuario. Permite listar ventanas abiertas, abrir programas, enfocar o cerrar ventanas, y cambiar de escritorio virtual.',
+    parameters: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['listar', 'abrir', 'enfocar', 'cerrar', 'workspace'],
+          description: 'Acción a ejecutar sobre el entorno de escritorio.',
+        },
+        target: {
+          type: 'string',
+          description: "Nombre del programa a abrir (ej. 'alacritty', 'code', 'dolphin'), el ID de la ventana para enfocar/cerrar, o el número del workspace. Vacío si la acción es 'listar'.",
+        },
+      },
+      required: ['action'],
     },
   },
 ];
@@ -106,6 +127,21 @@ async function handleToolCall(name, args = {}) {
     return {
       status: text.startsWith('Error al buscar') ? 'error' : 'success',
       message: text,
+    };
+  }
+  if (name === 'controlar_entorno') {
+    const action = String(args?.action ?? '').toLowerCase().trim();
+    if (action === 'listar') {
+      const list = windows.getWindows();
+      return {
+        status: 'success',
+        message: JSON.stringify(list),
+      };
+    }
+    const res = windows.manage(action, args?.target);
+    return {
+      status: res.ok ? 'success' : 'error',
+      message: res.ok ? res.message : res.error,
     };
   }
   return { status: 'error', message: `Herramienta no soportada: ${name}` };
@@ -183,11 +219,12 @@ function warmOllama() {
   }).catch(() => {});
 }
 
-async function transcribeAudio({ base64, mimeType }) {
-  if (gemini.getApiKey()) {
-    return gemini.transcribeAudio({ base64, mimeType });
+async function transcribeAudio({ base64 }) {
+  if (!base64) {
+    throw new Error('No se recibió audio para transcribir.');
   }
-  throw new Error('La transcripción de audio por IA requiere GEMINI_API_KEY configurada en .env');
+  const audioBuffer = Buffer.from(base64, 'base64');
+  return localStt.transcribeLocal(audioBuffer);
 }
 
 module.exports = {
@@ -198,4 +235,5 @@ module.exports = {
   warmOllama,
   gemini,
   ollama,
+  localStt,
 };

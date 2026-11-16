@@ -4,8 +4,10 @@
 // Tracks active workspaces, focused windows, and window boundaries in Niri's
 // scrolling layout so Capri can sit on window borders or react to window focus.
 
+const fs = require('node:fs');
+const path = require('node:path');
 const readline = require('node:readline');
-const { spawn, spawnSync } = require('node:child_process');
+const { spawn, spawnSync, execSync } = require('node:child_process');
 
 function startNiriWatch({ overlay, onUpdate }) {
   let child = null;
@@ -164,4 +166,141 @@ function startWindowWatch({ overlay, onUpdate }) {
   return { stop() {}, refresh() {} };
 }
 
-module.exports = { startWindowWatch };
+function getWindows() {
+  try {
+    if (process.platform === 'linux') {
+      const raw = execSync('niri msg -j windows', { encoding: 'utf8', timeout: 3000 });
+      const list = JSON.parse(raw || '[]');
+      return list.map((w) => ({
+        id: w.id,
+        title: w.title || '',
+        app_id: w.app_id || '',
+        workspace_id: w.workspace_id,
+      }));
+    }
+
+    if (process.platform === 'win32') {
+      const psScript = path.join(__dirname, '..', '..', 'scripts', 'windows.ps1');
+      if (fs.existsSync(psScript)) {
+        const raw = execSync(`powershell -NoProfile -ExecutionPolicy Bypass -File "${psScript}" list`, {
+          encoding: 'utf8',
+          timeout: 4000,
+        });
+        const parsed = JSON.parse(raw || '[]');
+        return (Array.isArray(parsed) ? parsed : [parsed]).filter(Boolean);
+      }
+      const raw = execSync(
+        'powershell -NoProfile -Command "Get-Process | Where-Object {$_.MainWindowTitle -ne \'\'} | Select-Object Id,ProcessName,MainWindowTitle | ConvertTo-Json"',
+        { encoding: 'utf8', timeout: 4000 }
+      );
+      const parsed = JSON.parse(raw || '[]');
+      const items = Array.isArray(parsed) ? parsed : [parsed];
+      return items.filter(Boolean).map((p) => ({
+        id: p.Id,
+        title: p.MainWindowTitle || '',
+        app_id: p.ProcessName || '',
+        workspace_id: 1,
+      }));
+    }
+
+    return [];
+  } catch (err) {
+    console.warn('[capri:windows] Error al listar ventanas:', err.message);
+    return [];
+  }
+}
+
+function normalizeAction(action) {
+  const map = {
+    abrir: 'spawn',
+    spawn: 'spawn',
+    cerrar: 'close',
+    close: 'close',
+    enfocar: 'focus',
+    focus: 'focus',
+    workspace: 'workspace',
+  };
+  return map[String(action || '').toLowerCase().trim()] || '';
+}
+
+function runNiriAction(args) {
+  const res = spawnSync('niri', ['msg', 'action', ...args], {
+    encoding: 'utf8',
+    timeout: 4000,
+  });
+  if (res.error) throw res.error;
+  if (res.status !== 0) {
+    throw new Error((res.stderr || res.stdout || `niri salió con código ${res.status}`).trim());
+  }
+}
+
+function manage(action, target) {
+  const act = normalizeAction(action);
+  const tgt = String(target ?? '').trim();
+
+  if (!act) {
+    return { ok: false, error: `Acción no soportada: ${action}` };
+  }
+  if (!tgt) {
+    return { ok: false, error: `Falta el parámetro target para la acción "${action}".` };
+  }
+
+  try {
+    if (process.platform === 'linux') {
+      if (act === 'spawn') {
+        runNiriAction(['spawn', '--', tgt]);
+        return { ok: true, message: `Aplicación "${tgt}" lanzada en Niri.` };
+      }
+      if (act === 'focus') {
+        runNiriAction(['focus-window', '--id', tgt]);
+        return { ok: true, message: `Ventana ${tgt} enfocada en Niri.` };
+      }
+      if (act === 'close') {
+        runNiriAction(['focus-window', '--id', tgt]);
+        runNiriAction(['close-window']);
+        return { ok: true, message: `Ventana ${tgt} cerrada en Niri.` };
+      }
+      if (act === 'workspace') {
+        runNiriAction(['focus-workspace', tgt]);
+        return { ok: true, message: `Workspace cambiado a ${tgt} en Niri.` };
+      }
+    }
+
+    if (process.platform === 'win32') {
+      const psScript = path.join(__dirname, '..', '..', 'scripts', 'windows.ps1');
+      if (fs.existsSync(psScript)) {
+        execSync(`powershell -NoProfile -ExecutionPolicy Bypass -File "${psScript}" ${act} "${tgt}"`, {
+          encoding: 'utf8',
+          timeout: 5000,
+        });
+        return { ok: true, message: `Acción "${act}" ejecutada sobre "${tgt}" en Windows.` };
+      }
+
+      if (act === 'spawn') {
+        execSync(`powershell -NoProfile -Command "Start-Process '${tgt.replace(/'/g, "''")}'"`, { timeout: 4000 });
+        return { ok: true, message: `Programa "${tgt}" iniciado en Windows.` };
+      }
+      if (act === 'close') {
+        execSync(`taskkill /PID ${Number(tgt) || tgt} /F`, { timeout: 4000 });
+        return { ok: true, message: `Ventana/proceso ${tgt} cerrado en Windows.` };
+      }
+      if (act === 'focus') {
+        execSync(
+          `powershell -NoProfile -Command "(New-Object -ComObject WScript.Shell).AppActivate(${Number(tgt) || `'${tgt.replace(/'/g, "''")}'`})"`,
+          { timeout: 4000 }
+        );
+        return { ok: true, message: `Ventana ${tgt} enfocada en Windows.` };
+      }
+      if (act === 'workspace') {
+        return { ok: false, error: 'El cambio de workspace por CLI requiere scripts/windows.ps1 en Windows.' };
+      }
+    }
+
+    return { ok: false, error: `Plataforma no soportada: ${process.platform}` };
+  } catch (err) {
+    console.warn('[capri:windows] Error en manage:', err.message);
+    return { ok: false, error: err.message };
+  }
+}
+
+module.exports = { startWindowWatch, getWindows, manage };

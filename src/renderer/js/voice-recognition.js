@@ -49,8 +49,8 @@ function blobToBase64(blob) {
 }
 
 // Regex para detectar "Capri" al inicio o en la frase
-const WAKE_WORD_RE = /^(?:(?:oye|hey|ok|hola|eh|ey)\s+)?(?:capri|capry|cabri|kapri|capre|catri|capi|cafri)\b[,:\s-]*(.*)/i;
-const EMBEDDED_CAPRI_RE = /\b(?:capri|capry|cabri|kapri|capre|catri|capi|cafri)\b[,:\s-]*(.*)/i;
+const WAKE_WORD_RE = /^(?:(?:oye|hey|ok|hola|eh|ey)\s+)?(?:capri|capry|cabri|kapri|capre|catri|capi|cafri|caprito|cabril|cábril|capril|caprino|caprina)\b[,:\s-]*(.*)/i;
+const EMBEDDED_CAPRI_RE = /\b(?:capri|capry|cabri|kapri|capre|catri|capi|cafri|caprito|cabril|cábril|capril|caprino|caprina)\b[,:\s-]*(.*)/i;
 
 export class VoiceRecognition {
   constructor(host) {
@@ -65,6 +65,8 @@ export class VoiceRecognition {
     this.audioStream = null;
     this.audioContext = null;
     this.processor = null;
+    this.keepAliveTimer = null;
+    this._boundResume = null;
 
     this.recordedSamples = [];
     this.isSpeaking = false;
@@ -72,6 +74,7 @@ export class VoiceRecognition {
     this.isTranscribing = false;
 
     this.callbacks = null;
+    this.onWakeWordDetected = null;
     this.mode = null; // 'speech-api' | 'audio-record'
   }
 
@@ -83,12 +86,16 @@ export class VoiceRecognition {
   }
 
   // Inicia el modo de escucha continua tipo Jarvis (Wake Word "Capri")
-  async startContinuous({ onWakeWord, onSpeechStateChange, onTranscribing, onFollowupTimeout, onInterim, onError, lang = 'es-ES' } = {}) {
+  async startContinuous({ onWakeWord, onWakeWordDetected, onSpeechStateChange, onTranscribing, onFollowupTimeout, onInterim, onError, lang = 'es-ES' } = {}) {
     this.alwaysOn = true;
     this.isPaused = false;
+    if (typeof onWakeWordDetected === 'function') {
+      this.onWakeWordDetected = onWakeWordDetected;
+    }
     this.callbacks = {
       ...this.callbacks,
       onWakeWord,
+      onWakeWordDetected: this.onWakeWordDetected,
       onSpeechStateChange,
       onTranscribing,
       onFollowupTimeout,
@@ -130,6 +137,7 @@ export class VoiceRecognition {
 
   // Pone a Capri a escuchar directamente la orden sin necesidad de decir "Capri" primero
   triggerDirectListen(timeoutMs = 8000) {
+    this.ensureAudioRunning();
     this.waitingForFollowup = true;
     this.clearFollowupTimer();
     this.followupTimer = setTimeout(() => {
@@ -218,6 +226,39 @@ export class VoiceRecognition {
     await this.startAudioFallback();
   }
 
+  async ensureAudioRunning() {
+    if (!this.audioContext || this.audioContext.state === 'closed') return;
+    if (this.audioContext.state === 'suspended') {
+      try {
+        await this.audioContext.resume();
+      } catch {}
+    }
+  }
+
+  bindAudioResumeListeners() {
+    if (this._boundResume || typeof window === 'undefined') return;
+    this._boundResume = () => {
+      this.ensureAudioRunning();
+    };
+    window.addEventListener('pointerdown', this._boundResume, { passive: true });
+    window.addEventListener('keydown', this._boundResume, { passive: true });
+    window.addEventListener('focus', this._boundResume, { passive: true });
+  }
+
+  unbindAudioResumeListeners() {
+    if (!this._boundResume || typeof window === 'undefined') return;
+    window.removeEventListener('pointerdown', this._boundResume);
+    window.removeEventListener('keydown', this._boundResume);
+    window.removeEventListener('focus', this._boundResume);
+    this._boundResume = null;
+  }
+
+  resetVadState() {
+    this.isSpeaking = false;
+    this.silenceTicks = 0;
+    this.recordedSamples = [];
+  }
+
   async startAudioFallback() {
     if (!navigator.mediaDevices?.getUserMedia) {
       this.callbacks?.onError?.('no_mic_support');
@@ -227,43 +268,66 @@ export class VoiceRecognition {
 
     try {
       this.mode = 'audio-record';
+      this._firstAudioChunkReceived = false;
+
+      let chosenDeviceId;
+      if (navigator.mediaDevices.enumerateDevices) {
+        const allDevices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+        const audioInputs = allDevices.filter((d) => d.kind === 'audioinput');
+        console.log('[Capri:VAD] Micrófonos detectados:', audioInputs.map((d) => ({ deviceId: d.deviceId, label: d.label })));
+        const realMic = audioInputs.find((d) => d.deviceId && d.deviceId !== 'default' && !/monitor|virtual|audiorelay/i.test(d.label || ''))
+          || audioInputs.find((d) => !/monitor|virtual|audiorelay/i.test(d.label || ''));
+        if (realMic?.deviceId) {
+          chosenDeviceId = realMic.deviceId;
+        }
+      }
+
+      const audioConstraints = {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        channelCount: 1,
+      };
+      if (chosenDeviceId) {
+        audioConstraints.deviceId = { ideal: chosenDeviceId };
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          channelCount: 1,
-        },
+        audio: audioConstraints,
+      }).catch((err) => {
+        console.error('[Capri] Error de micrófono:', err);
+        throw err;
       });
+      console.log('[Capri:VAD] Micrófono capturado:', stream.getAudioTracks()[0]?.label || '(sin etiqueta)');
 
       this.audioStream = stream;
-      this.recordedSamples = [];
-      this.isSpeaking = false;
-      this.silenceTicks = 0;
+      this.resetVadState();
 
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       const audioCtx = new AudioCtx({ sampleRate: 16000 });
-      if (audioCtx.state === 'suspended') {
-        await audioCtx.resume().catch(() => {});
-      }
       this.audioContext = audioCtx;
+      await this.ensureAudioRunning();
+      this.bindAudioResumeListeners();
+
+      audioCtx.onstatechange = () => {
+        if (this.active && !this.isPaused && audioCtx.state === 'suspended') {
+          this.ensureAudioRunning();
+        }
+      };
 
       const source = audioCtx.createMediaStreamSource(stream);
-      // Buffer size 4096 a 16kHz da eventos cada ~256ms
-      const processor = audioCtx.createScriptProcessor(4096, 1, 1);
-      this.processor = processor;
-
       // Silenciar salida al altavoz manteniendo vivo el grafo de audio
       const silentGain = audioCtx.createGain();
       silentGain.gain.value = 0;
 
       let preRoll = [];
       const PRE_ROLL_CHUNKS = 2; // ~512ms previos para no cortar el inicio de "Capri"
-      let noiseFloor = 0.001;
+      const MAX_SPEECH_CHUNKS = 32; // ~8.2s máximo por frase para evitar bloqueos
+      let warmupChunks = 2; // Ignorar pico inicial de apertura del hardware
+      let noiseFloor = 0.004;
 
-      processor.onaudioprocess = (e) => {
+      const handleAudioChunk = (channelData) => {
         if (!this.active || this.isPaused || this.mode !== 'audio-record') return;
-        const channelData = e.inputBuffer.getChannelData(0);
 
         // Calcular volumen RMS
         let sum = 0;
@@ -271,14 +335,22 @@ export class VoiceRecognition {
           sum += channelData[i] * channelData[i];
         }
         const rms = Math.sqrt(sum / channelData.length);
-        const threshold = Math.max(0.0025, noiseFloor * 2.6);
 
-        if (rms > threshold) {
+        if (warmupChunks > 0) {
+          warmupChunks--;
+          noiseFloor = Math.min(0.012, noiseFloor * 0.5 + Math.min(rms, 0.015) * 0.5);
+          return;
+        }
+
+        const threshold = Math.max(0.014, noiseFloor * 2.6);
+
+        if (rms > threshold && (!this.isSpeaking || this.recordedSamples.length < MAX_SPEECH_CHUNKS)) {
           if (!this.isSpeaking) {
             this.isSpeaking = true;
             this.recordedSamples = [...preRoll];
             preRoll = [];
             this.callbacks?.onSpeechStateChange?.(true);
+            console.warn(`[Capri:VAD] Voz detectada (rms=${rms.toFixed(5)}, thr=${threshold.toFixed(5)})`);
           }
           this.silenceTicks = 0;
           this.recordedSamples.push(new Float32Array(channelData));
@@ -286,8 +358,8 @@ export class VoiceRecognition {
           this.silenceTicks++;
           this.recordedSamples.push(new Float32Array(channelData));
 
-          // ~760ms de silencio tras hablar (3 ticks a ~256ms)
-          if (this.silenceTicks >= 3) {
+          // ~1024ms de silencio tras hablar (4 ticks a ~256ms) o límite máximo alcanzado
+          if (this.silenceTicks >= 4 || this.recordedSamples.length >= MAX_SPEECH_CHUNKS) {
             this.isSpeaking = false;
             this.silenceTicks = 0;
             this.callbacks?.onSpeechStateChange?.(false);
@@ -295,7 +367,7 @@ export class VoiceRecognition {
             const chunks = this.recordedSamples;
             this.recordedSamples = [];
 
-            // Procesar si supera ~0.38s de audio mínimo (6000 muestras) y tiene pico suficiente
+            // Procesar si supera ~0.5s de audio mínimo (8000 muestras) y tiene pico claro
             let totalLen = 0;
             let maxPeak = 0;
             for (const c of chunks) {
@@ -305,23 +377,66 @@ export class VoiceRecognition {
                 if (v > maxPeak) maxPeak = v;
               }
             }
-            if (totalLen >= 6000 && maxPeak >= 0.005) {
+            console.warn(`[Capri:VAD] Fin de frase (muestras=${totalLen}, peak=${maxPeak.toFixed(5)})`);
+            if (totalLen >= 8000 && maxPeak >= 0.04) {
               this.processRecordedSpeech(chunks, totalLen, maxPeak);
             }
           }
         } else {
-          // Actualizar piso de ruido ambiental suavemente
-          noiseFloor = noiseFloor * 0.92 + rms * 0.08;
+          // Actualizar piso de ruido ambiental suavemente sin dejar que la voz lo infle
+          if (rms < 0.025) {
+            noiseFloor = Math.min(0.012, noiseFloor * 0.92 + rms * 0.08);
+          }
           preRoll.push(new Float32Array(channelData));
           if (preRoll.length > PRE_ROLL_CHUNKS) preRoll.shift();
         }
       };
 
-      source.connect(processor);
-      processor.connect(silentGain);
-      silentGain.connect(audioCtx.destination);
+      let workletAttached = false;
+      if (audioCtx.audioWorklet && typeof AudioWorkletNode !== 'undefined') {
+        const workletUrl = new URL('./vad-processor.js', import.meta.url).href;
+        try {
+          await audioCtx.audioWorklet.addModule(workletUrl);
+          const workletNode = new AudioWorkletNode(audioCtx, 'vad-processor');
+          workletNode.port.onmessage = (event) => {
+            if (!this._firstAudioChunkReceived) {
+              this._firstAudioChunkReceived = true;
+              console.log('[Capri:VAD] Datos de audio recibidos con éxito desde el Worklet!');
+            }
+            if (event.data instanceof Float32Array) {
+              handleAudioChunk(event.data);
+            }
+          };
+          this.processor = workletNode;
+          source.connect(workletNode);
+          workletNode.connect(silentGain);
+          silentGain.connect(audioCtx.destination);
+          workletAttached = true;
+        } catch (workletErr) {
+          console.error('[Capri:VAD] Fallo crítico al cargar vad-processor.js:', workletUrl, workletErr);
+        }
+      }
+
+      if (!workletAttached) {
+        // Fallback legado solo si AudioWorklet no está disponible o falló al cargar
+        const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+        this.processor = processor;
+        processor.onaudioprocess = (e) => handleAudioChunk(e.inputBuffer.getChannelData(0));
+        source.connect(processor);
+        processor.connect(silentGain);
+        silentGain.connect(audioCtx.destination);
+      }
+
+      // Keep-alive ligero para evitar suspensión del AudioContext en segundo plano (Wayland/Windows)
+      clearInterval(this.keepAliveTimer);
+      this.keepAliveTimer = setInterval(() => {
+        if (this.active && !this.isPaused) {
+          this.ensureAudioRunning();
+        }
+      }, 5000);
+
       this.active = true;
-      console.warn('[capri:voice] Micrófono siempre activo (VAD adaptativo listo).');
+      console.warn('[capri:voice] Micrófono siempre activo (AudioWorklet VAD adaptativo listo).');
     } catch (err) {
       console.error('[capri:voice] Error accediendo al micrófono:', err);
       this.callbacks?.onError?.(err.name || 'permission_denied');
@@ -356,18 +471,26 @@ export class VoiceRecognition {
 
       if (!base64) return;
 
-      const res = await this.host.transcribeAudio({ base64, mimeType: 'audio/wav' });
+      const res = await this.host
+        .transcribeAudio({ base64, mimeType: 'audio/wav' })
+        .catch((err) => ({ ok: false, error: err?.message || 'ipc_transcribe_error' }));
+
       if (res?.ok && res.text && res.text.trim()) {
         console.warn('[capri:voice] Transcripción:', res.text.trim());
         this.handleTranscription(res.text.trim());
       } else if (res && !res.ok) {
         console.warn('[capri:voice] Fallo transcripción:', res.error);
+        this.resetVadState();
+        this.callbacks?.onError?.(res.error || 'stt_unavailable');
       }
     } catch (err) {
-      console.warn('[capri:voice] Error procesando transcripción:', err.message);
+      console.warn('[capri:voice] Error procesando transcripción:', err?.message || err);
+      this.resetVadState();
+      this.callbacks?.onError?.(err?.message || 'stt_error');
     } finally {
       this.isTranscribing = false;
       this.callbacks?.onTranscribing?.(false);
+      this.callbacks?.onSpeechStateChange?.(false);
     }
   }
 
@@ -397,6 +520,12 @@ export class VoiceRecognition {
         .replace(/^[,\s:;-]+/, '')
         .replace(/[.!?¿¡]+$/g, '')
         .trim();
+
+      this.onWakeWordDetected?.({
+        fullText: text,
+        command: instruction,
+        isPrompt: instruction.length < 2,
+      });
 
       if (instruction.length >= 2) {
         // Ejemplo: "Capri ejecuta docker ps" o "Capri abre brave"
@@ -462,6 +591,13 @@ export class VoiceRecognition {
     this.active = false;
     this.waitingForFollowup = false;
     this.clearFollowupTimer();
+    this.resetVadState();
+    this.unbindAudioResumeListeners();
+
+    if (this.keepAliveTimer) {
+      clearInterval(this.keepAliveTimer);
+      this.keepAliveTimer = null;
+    }
 
     if (this.recognition) {
       try { this.recognition.abort(); } catch {}
@@ -469,7 +605,10 @@ export class VoiceRecognition {
     }
 
     if (this.processor) {
-      try { this.processor.disconnect(); } catch {}
+      try {
+        if (this.processor.port) this.processor.port.onmessage = null;
+        this.processor.disconnect();
+      } catch {}
       this.processor = null;
     }
 

@@ -296,7 +296,8 @@
         "estado tailscale",
         "estado de tailscale",
         "ver tailscale",
-        "tailscale status"
+        "tailscale status",
+        "ver vpn"
       ],
       "description": "Muestra los nodos y dispositivos conectados en la red Tailscale"
     },

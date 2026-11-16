@@ -64,10 +64,14 @@ function toGeminiTools(tools = []) {
         decl.parameters = {
           type: 'OBJECT',
           properties: Object.fromEntries(
-            Object.entries(props).map(([k, v]) => [
-              k,
-              { type: String(v.type || 'string').toUpperCase(), description: v.description || '' },
-            ])
+            Object.entries(props).map(([k, v]) => {
+              const prop = {
+                type: String(v.type || 'string').toUpperCase(),
+                description: v.description || '',
+              };
+              if (Array.isArray(v.enum)) prop.enum = v.enum;
+              return [k, prop];
+            })
           ),
           required: t.parameters?.required || [],
         };
